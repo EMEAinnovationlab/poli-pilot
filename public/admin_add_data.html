@@ -1,0 +1,95 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8"/>
+  <meta name="viewport" content="width=device-width"/>
+  <title>Admin — Add Data</title>
+
+  <link rel="stylesheet" href="/styles.css" />
+  <link rel="stylesheet" href="/admin.css" />
+</head>
+<body>
+  <header class="site-header">
+    <div class="header-inner">
+      <a class="brand" href="/admin.html">
+        <img src="/images/brand/logo_icon_small.png" alt="">
+        <span class="brand-text">
+          <span class="brand-title">Poli Pilot</span>
+          <span class="brand-subtitle">TECH SECTOR</span>
+        </span>
+      </a>
+          <nav class="main-nav">
+        <a href="/admin.html" class="nav-link">Prompts</a>
+        <a href="/admin_users.html" class="nav-link">Users</a>
+        <a href="/admin_data.html" class="nav-link">Included Data</a>
+        <a href="/admin_add_data.html" class="nav-link" aria-current="page">Add Data</a>
+        <a id="logout" class="nav-link" href="/logout">Log out</a>
+      </nav>
+    </div>
+  </header>
+
+  <main style="max-width:900px;margin:24px auto;padding:0 16px;">
+    <h1 style="font-family: var(--font-serif); margin: 0 0 12px;">Add Data (Admin)</h1>
+
+    <p class="muted" style="margin: 8px 0 16px;">
+      Upload a <strong>.csv</strong> or <strong>.xlsx</strong>. Each row is one record with columns like:
+      <code>doc_name, uploaded_by, datum, naam, bron, link, invloed_text, content</code>.
+      Delimiter may be comma <em>or</em> semicolon (auto-detected).
+    </p>
+
+    <form id="ingest-form" style="display:grid; gap:12px; margin-top:16px;">
+      <div>
+        <label for="file">Spreadsheet file</label>
+        <input type="file" id="file" name="file" accept=".csv,.xlsx" required />
+      </div>
+
+      <div>
+        <label for="doc_name">Default document name (optional)</label>
+        <input
+          type="text"
+          id="doc_name"
+          name="doc_name"
+          placeholder="Used only if rows don't have doc_name"
+        />
+        <div class="muted" style="font-size:12px;margin-top:4px;">
+          If your file contains a <code>doc_name</code> column, that value will be used per row.
+        </div>
+      </div>
+
+      <div>
+        <label for="uploaded_by">Default “uploaded by” (optional)</label>
+        <select id="uploaded_by" name="uploaded_by">
+          <option value="">(none)</option>
+          <option value="Edelman">Edelman</option>
+          <option value="Public Matters">Public Matters</option>
+        </select>
+        <div class="muted" style="font-size:12px;margin-top:4px;">
+          If your file contains an <code>uploaded_by</code> column, that value wins per row.
+        </div>
+      </div>
+
+      <div style="display:flex; gap:8px; align-items:center;">
+        <button id="btn-preview" type="button" class="nav-cta">Parse &amp; Build CSV Preview</button>
+        <button id="btn-upload"  type="button" class="nav-cta" disabled>Create Embeddings &amp; Upload</button>
+      </div>
+
+      <div id="status" class="muted"></div>
+    </form>
+
+    <section id="preview" style="margin-top:20px; display:none;">
+      <h2 style="margin:0 0 10px;">Preview</h2>
+      <div id="preview-meta" class="muted" style="margin-bottom:10px;"></div>
+      <div id="preview-table" style="overflow:auto;"></div>
+      <div style="margin-top:8px;">
+        <button id="btn-download-preview" type="button" class="nav-cta">Download CSV preview</button>
+      </div>
+
+      <label style="display:flex; gap:8px; align-items:center; margin-top:14px;">
+        <input type="checkbox" id="confirm" /> <span>I confirm the CSV preview looks correct</span>
+      </label>
+    </section>
+  </main>
+
+  <script type="module" src="/js/admin_add_data.js"></script>
+</body>
+</html>

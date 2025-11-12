@@ -1,0 +1,25 @@
+# Node / tooling
+node_modules/
+npm-debug.log*
+yarn.lock
+pnpm-lock.yaml
+
+# Local env & secrets
+.env
+.env.*
+.vercel/
+*.key
+*.pem
+
+# Build / caches
+dist/
+build/
+.cache/
+.next/
+out/
+coverage/
+.DS_Store
+
+# Logs
+*.log
+logs/

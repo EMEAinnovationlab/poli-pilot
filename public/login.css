@@ -1,0 +1,213 @@
+/* ========== Login Page ========== */
+
+/* Page background */
+.login-body {
+  min-height: 100vh;
+  margin: 0;
+  font-family: var(--font-sans, Inter, system-ui, sans-serif);
+  color: var(--black, #1b1b1b);
+
+  /* soft paper texture look without images */
+  background-image: url(images/brand/background-texture.png);
+  background-size:cover;
+  background-position: bottom left;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  flex-direction: column;
+
+  
+}
+
+/* Outer card */
+.login-container {
+  width: 50vw;
+  /* margin: 8vh auto;x */
+  background: var(--white);
+  border-radius: 10px;
+  box-shadow: 0 30px 80px rgba(0,0,0,.08);
+  overflow: hidden;
+
+  display: grid;
+  grid-template-columns: 1.2fr 1fr; /* left hero bigger */
+  gap: 0;
+  margin-bottom: 100px;
+}
+
+/* Left hero panel */
+.login-left {
+  position: relative;
+  padding: 32px 32px;
+  color: #fff;
+  display: flex;
+  flex-direction: column;
+  justify-content: flex-end;
+  min-height: 420px;
+  width: 30vw;
+
+  /* Bold color split with grainy feel */
+    background-image: url(images/brand/background_login.png);;
+    background-repeat: no-repeat;
+    background-size: cover;
+    background-position: right;
+  isolation: isolate;
+}
+
+.login-badge {
+  position: absolute;
+  top: 28px;
+  left: 28px;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 12px;
+  border-radius: 999px;
+  background: var(--white);
+  color: var(--dark-brown);
+  font-weight: 700;
+  letter-spacing: .06em;
+  font-size: 12px;
+}
+
+.login-left h1 {
+  font-family: var(--font-serif, "DM Serif Display", serif);
+  font-size: clamp(32px, 4.4vw, 56px);
+  line-height: 1.02;
+  margin: 0px 0 0;
+  color: var(--white);
+  text-shadow: 0 2px 16px rgba(0,0,0,.18);
+}
+
+/* Right form panel */
+.login-right {
+  padding: 52px 30px;
+  display: flex;
+  flex-direction: column;
+  /* align-items: stretch; */
+  justify-content: center;
+  gap: 18px;
+  background: var(--white);
+  width: 20vw;
+}
+
+.login-logo {
+  width: 84px;
+  height: 84px;
+  margin: 0 auto 0px;
+  display: block;
+}
+
+.login-right h2 {
+  font-family: var(--font-serif, "DM Serif Display", serif);
+  font-size: 36px;
+  text-align: center;
+  margin: -10px 0 0px;
+}
+
+/* Button — reuse your .btn & .btn-primary if defined */
+#login-form .btn,
+#login-form button[type="submit"] {
+ }
+
+#login-form .btn:hover,
+#login-form button[type="submit"]:hover {
+}
+
+#login-form .btn:active,
+#login-form button[type="submit"]:active {
+  transform: translateY(1px);
+}
+
+/* Helper links */
+.login-right p {
+  margin: 6px 0 0;
+  text-align: left;
+}
+
+.login-right a {
+  color: var(--medium-dark-brown);
+  font-size: 12px;
+  text-decoration: underline;
+}
+.login-right a:hover {   color: var(--dark-brown);; }
+
+/* Footer note under the card (from your mock) */
+.login-footer {
+  text-align: center;
+  margin-top: 22px;
+  color: rgba(0,0,0,.55);
+  font-size: 13px;
+}
+
+
+
+.logo_footer {
+  position: absolute;
+  bottom: 0;  
+  align-items: center;
+  justify-content: center;
+}
+
+.logo_container { 
+  display: flex;
+  gap: 50px;
+  margin-bottom: 50px;
+  
+}
+ 
+.text_logo_footer {
+  color: var(--medium-dark-brown);
+  text-align: center;
+}
+
+
+
+@media (max-width: 1200px) {
+.login-container {
+  width: 80vw;
+}
+
+.login-left {
+ width: 50vw;
+}
+
+.login-right {
+  width: 30vw;
+}
+
+
+}
+
+
+
+/* ----- Responsive ----- */
+@media (max-width: 800px) {
+  .login-container {
+    margin: -2.5vh 20px;
+    grid-template-columns: 1fr;
+    margin-bottom: 150px;
+  }
+  .login-left { min-height: 260px; padding: 40px 28px; }
+  .login-right { padding: 36px 28px; }
+  .login-left h1 { font-size: clamp(28px, 7vw, 44px); }
+  
+  .login-left {
+ width: 100%;
+}
+
+.login-right {
+
+width: 100%;
+}
+.form-submit {
+  height: 50px;
+}
+
+.login-logo {
+  display: none;
+}
+
+
+
+}
+

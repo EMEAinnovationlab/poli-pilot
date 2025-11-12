@@ -1,0 +1,55 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8"/>
+  <meta name="viewport" content="width=device-width"/>
+  <title>Admin — Included Data</title>
+
+  <link rel="stylesheet" href="/styles.css">
+  <link rel="stylesheet" href="/admin.css">
+</head>
+<body>
+  <header class="site-header" role="navigation" aria-label="Primary">
+    <div class="header-inner">
+      <a class="brand" href="/admin.html">
+        <img src="/images/brand/logo_icon_small.png" alt="">
+        <span class="brand-text">
+          <span class="brand-title">Poli Pilot</span>
+          <span class="brand-subtitle">TECH SECTOR</span>
+        </span>
+      </a>
+
+          <nav class="main-nav">
+        <a href="/admin.html" class="nav-link">Prompts</a>
+        <a href="/admin_users.html" class="nav-link">Users</a>
+        <a href="/admin_data.html" class="nav-link">Included Data</a>
+        <a href="/admin_add_data.html" class="nav-link" aria-current="page">Add Data</a>
+        <a id="logout" class="nav-link" href="/logout">Log out</a>
+      </nav>
+    </div>
+  </header>
+
+  <main style="max-width:1000px;margin:24px auto;padding:0 16px;">
+    <h1 style="font-family: var(--font-serif); margin: 0 0 12px;">Included Data (Admin)</h1>
+    <p class="muted" id="page-hint" style="margin-top:4px;">
+      Read-only overview of all documents available to the assistant.
+    </p>
+
+    <!-- Controls -->
+    <div style="display:flex; gap:10px; align-items:center; margin:16px 0 10px;">
+      <button id="refresh" class="nav-cta" type="button" style="height:auto; padding:10px 14px;">Refresh</button>
+    </div>
+
+    <!-- Summary -->
+    <div id="summary" class="muted" style="margin: 8px 0 14px;"></div>
+
+    <!-- Table mount -->
+    <div id="table-wrap" style="overflow:auto;">
+      <div id="status" class="muted">Loading…</div>
+      <div id="table"></div>
+    </div>
+  </main>
+
+  <script type="module" src="/js/admin_data.js"></script>
+</body>
+</html>

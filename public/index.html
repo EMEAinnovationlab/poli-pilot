@@ -1,0 +1,187 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Poli Pilot — Chat</title>
+
+  <!-- Markdown Renderer -->
+  <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+
+  <!-- Main stylesheet (includes Google Fonts via @import) -->
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+<header class="site-header" role="navigation" aria-label="Primary">
+  <div class="header-inner">
+    <a class="brand" id="warning-modal" href="/">
+        <img class="logo" src="images/brand/logo_icon_medium.png" alt="">
+    
+      </span>
+      <span class="brand-text">
+        <span class="brand-title">Poli Pilot</span>
+        <span class="brand-subtitle">TECH SECTOR</span>
+      </span>
+    </a>
+
+    <nav class="main-nav">
+      <a href="#about" class="nav-link">Over Poli Pilot</a>
+      <a href="#how" class="nav-link">Hoe werkt het?</a>
+      <a href="#data" class="nav-link">Data</a>
+      <a id="warning-modal" class="nav-cta">Nieuw gesprek</a>
+      <a id="logout" class="nav-link">Log out</a>
+      <button class="nav-toggle" aria-label="Open menu" aria-expanded="false" aria-controls="nav-drawer">
+        ☰
+      </button>
+    </nav>
+
+
+  <!-- Mobile drawer -->
+  <div id="nav-drawer" class="nav-drawer hide" role="dialog" aria-modal="false" aria-label="Menu">
+    <a href="#about" class="drawer-link">Over Poli Pilot</a>
+    <a href="#how" class="drawer-link">Hoe werkt het?</a>
+    <a href="#data" class="drawer-link">Data</a>
+    <a href="/new" class="nav-cta drawer-cta">Nieuw gesprek</a>
+    <a href="/logout" class="drawer-link">Log out</a>
+  </div>
+</header>
+
+  </div>
+
+
+ <div class="main-wrapper">
+    <div class="chat-wrapper">
+       <div class="chat-gradient"></div>
+        <div id="chat" class="chat"></div>
+    </div>
+</div>
+
+<div class="row-wrapper">
+    <div class="row">
+  <!-- Example Prompts -->
+  <!-- <div id="example-prompts" class="example-prompts hide">
+    <div class="example-header">
+      <h4>Example Questions</h4>
+      <button class="close-button" id="close-examples" aria-label="Close examples" type="button">
+        <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 18 18" fill="none">
+        <circle cx="9" cy="9" r="9" fill="white"/>
+        <path d="M12 6L6 12" stroke="#966A21" stroke-linecap="round" stroke-linejoin="round"/>
+        <path d="M6 6L12 12" stroke="#966A21" stroke-linecap="round" stroke-linejoin="round"/>
+        </svg>
+      </button>
+    </div> -->
+
+    <div id="example-prompts" class="example-prompts hide">
+  <div class="example-header">
+    <h4>Voorbeeld vragen</h4>
+    <button class="close-button" id="close-examples" aria-label="Close examples" type="button">
+  <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 18 18" fill="none">
+        <circle cx="9" cy="9" r="9" fill="white"/>
+        <path d="M12 6L6 12" stroke="#966A21" stroke-linecap="round" stroke-linejoin="round"/>
+        <path d="M6 6L12 12" stroke="#966A21" stroke-linecap="round" stroke-linejoin="round"/>
+        </svg>    </button>
+  </div>
+
+  <!-- We’ll fill this via JS -->
+  <div class="examples-grid" id="examples-grid"></div>
+</div>
+
+
+    <!-- <div class="examples-grid">
+      <div class="example" data-prompt="What are the current policy p   riorities of the Ministry of Economic Affairs?">
+        <div class="example-title">What thinks party X about</div>
+        <div class="example-text">What are the current policy priorities of the Ministry of Economic Affairs?</div>
+      </div>
+      <div class="example" data-prompt="What are the current policy p   riorities of the Ministry of Economic Affairs?">
+        <div class="example-title">What thinks party X about</div>
+        <div class="example-text">What are the current policy priorities of the Ministry of Economic Affairs?</div>
+      </div>
+      <div class="example" data-prompt="What are the current policy p   riorities of the Ministry of Economic Affairs?">
+        <div class="example-title">What thinks party X about</div>
+        <div class="example-text">What are the current policy priorities of the Ministry of Economic Affairs?</div>
+      </div>
+      <div class="example" data-prompt="How does the EU’s Green Deal affect Dutch industry?">
+        <div class="example-title">What thinks party X about</div>
+        <div class="example-text">How does the EU’s Green Deal affect Dutch industry?</div>
+      </div>
+      <div class="example" data-prompt="Summarize the latest political developments in the tech sector.">
+        <div class="example-title">What thinks party X about</div>
+        <div class="example-text">Summarize the latest political developments in the tech sector.</div>
+      </div>
+      <div class="example" data-prompt="What are the main arguments around AI regulation in the Netherlands?">
+        <div class="example-title">What thinks party X about</div>
+        <div class="example-text">What are the main arguments around AI regulation in the Netherlands?</div>
+      </div>
+    </div>
+  </div> -->
+
+
+<button id="toggle-examples" class="examples-toggle" type="button">Voorbeeld vragen</button>
+
+
+<div class="input-wrap">
+  <textarea id="input" placeholder="stel zelf een vraag" aria-label="Your message"></textarea>
+  <button id="send" type="button" aria-label="Send message">
+    <svg xmlns="http://www.w3.org/2000/svg" width="15" height="23" viewBox="0 0 15 23" fill="none">
+    <path d="M8.07112 0.292892C7.6806 -0.0976315 7.04743 -0.0976314 6.65691 0.292892L0.292945 6.65685C-0.0975792 7.04738 -0.0975792 7.68054 0.292945 8.07107C0.68347 8.46159 1.31663 8.46159 1.70716 8.07107L7.36401 2.41421L13.0209 8.07107C13.4114 8.46159 14.0446 8.46159 14.4351 8.07107C14.8256 7.68054 14.8256 7.04738 14.4351 6.65685L8.07112 0.292892ZM7.36401 23L8.36401 23L8.36401 1L7.36401 1L6.36401 1L6.36401 23L7.36401 23Z" fill="#FFFCF7"/>
+    </svg>
+  </button>
+
+
+</div>
+
+<p class="side_note">Poli Pilot kan fouten maken. Poli Pilot gebruikt jouw gegevens niet om zijn modellen te trainen.</p>
+
+<!-- Confirm New Conversation Modal -->
+<div id="confirm-modal" class="modal-overlay hide" role="dialog" aria-modal="true" aria-labelledby="confirm-title">
+  <div class="modal-card" role="document">
+    <h2 id="confirm-title">Weet je het zeker? Je huidige gesprek wordt niet opgeslagen.</h2>
+    <p class="modal-body">
+     Poli Pilot slaat geen gegevens op, waardoor eerdere chats niet bewaard blijven en verdwijnen zodra je een nieuwe chat start.
+    </p>
+    <div class="modal-actions">
+      <button id="modal-cancel" class="btn btn-primary" type="button">Cancel</button>
+      <button id="clear" class="btn btn-secondary" type="button">Nieuw gesprek</button>
+    </div>
+  </div>
+</div>
+
+
+
+<!-- Context Modal -->
+<div id="content-modal" class="pp-modal" aria-hidden="true">
+  <div class="pp-modal__backdrop" data-close></div>
+  <div class="pp-modal__sheet" role="dialog" aria-modal="true" aria-labelledby="pp-modal-title">
+    <button class="pp-modal__close" type="button" aria-label="Close" data-close>×</button>
+    <div class="pp-modal__hero">
+      <div class="pp-modal__nav" role="tablist" aria-label="Context pages">
+        <button class="pp-navbtn is-active" role="tab" aria-selected="true" data-page="about">Over Poli Pilot</button>
+        <button class="pp-navbtn" role="tab" aria-selected="false" data-page="how">Hoe werkt het?</button>
+        <button class="pp-navbtn" role="tab" aria-selected="false" data-page="data">Data</button>
+      </div>
+    </div>
+    
+    <div class="pp-modal__body">
+      <h2 id="pp-modal-title" class="pp-modal__title"></h2>
+      <div id="pp-modal-content" class="pp-modal__content"></div>
+    </div>
+  </div>
+</div>
+
+
+
+
+  <!-- Main JS -->
+  <script type="module" src="/js/main.js"></script>
+  <script type="module" src="/js/modal.js"></script>
+  <script type="module" src="/js/logout.js"></script>
+
+
+  <script type="module">
+  import { applyProjectSettings } from '/js/project_settings.js';
+  applyProjectSettings();
+</script>
+
+
+</body>
+</html>

@@ -1,0 +1,88 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8"/>
+  <meta name="viewport" content="width=device-width"/>
+  <title>Admin — Poli Pilot</title>
+  <link rel="stylesheet" href="/styles.css" />
+  <link rel="stylesheet" href="/admin.css" />
+  <script type="module">
+    import { enforceRole } from '/js/auth_guard.js';
+    await enforceRole({ requiredRole: 'admin' });
+  </script>
+</head>
+<body>
+  <header class="site-header"><div class="header-inner">
+    <a class="brand" href="/"><img src="/images/brand/logo_icon_small.png" alt=""><span class="brand-text"><span class="brand-title">Poli Pilot</span><span class="brand-subtitle">TECH SECTOR</span></span></a>
+
+          <nav class="main-nav">
+        <a href="/admin.html" class="nav-link">Prompts</a>
+        <a href="/admin_users.html" class="nav-link">Users</a>
+        <a href="/admin_data.html" class="nav-link">Included Data</a>
+        <a href="/admin_add_data.html" class="nav-link" aria-current="page">Add Data</a>
+        <a id="logout" class="nav-link" href="/logout">Log out</a>
+      </nav>
+  </div></header>
+
+
+
+
+
+  <main class="admin-wrap">
+    <div class="page-head">
+      <div class="brand-stack">
+        <img src="/images/brand/logo_icon_small.png" alt="">
+        <h1 class="brand-title-xl">Poli Pilot</h1>
+        <div id="brand-subtitle-editor">
+  <span class="brand-subtitle">TECH SECTOR</span>
+</div>
+      </div>
+
+ </div>
+
+
+
+<div class="section-columns">
+
+  <aside class="admin-col admin-settings">
+  <h2>Prompts</h2>
+  <div id="admin-settings"></div>
+  <div id="settings-status" class="admin-status"></div>
+</aside>
+
+    <section class="section-card admin-col">
+          <button id="save-all" class="btn primary btn-save">
+        <span class="icon">💾</span> save edits
+      </button>
+      <div class="section-title">EDIT EXAMPLE QUESTIONS</div>
+
+      <div class="toolbar">
+        <button id="add-new" class="btn primary">+ Add new question</button>
+        <span id="dirty-status" class="muted">All changes saved</span>
+      </div>
+
+      <p class="muted" id="list-status">Loading…</p>
+      <div id="prompt-list" class="list" aria-live="polite"></div>
+    </section>
+
+
+
+
+</div>
+
+
+  </main>
+
+  <script type="module" src="/js/admin.js"></script>
+  <script src="/js/logout.js" defer></script>
+  <script type="module" src="/js/admin_settings.js"></script>
+
+
+  <script type="module">
+  import { applyProjectSettings } from '/js/project_settings.js';
+  applyProjectSettings();
+</script>
+
+
+</body>
+</html>
