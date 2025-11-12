@@ -1,16 +1,15 @@
 // /js/login.js
 document.addEventListener("DOMContentLoaded", () => {
-  // find the form by id OR by the generic class
+  // Find the form by id OR by a generic class
   const form =
     document.getElementById("login-form") ||
     document.querySelector("form.form");
-
-  if (!form) return; // nothing to wire up
+  if (!form) return;
 
   const emailInput = document.getElementById("email");
   const codeInput  = document.getElementById("code");
 
-  // support any submit button selector you use
+  // Support any submit button selector
   const submitBtn = form.querySelector(
     'button[type="submit"], .form-submit, .login-submit'
   );
@@ -47,12 +46,12 @@ document.addEventListener("DOMContentLoaded", () => {
     form._t = setTimeout(validateForm, 300);
   });
 
-  // already logged in? redirect
+  // Already logged in? redirect home
   (async () => {
     try {
       const r = await fetch("/auth/me", { credentials: "same-origin" });
       if (r.ok) {
-        const j = await r.json();
+        const j = await r.json().catch(() => null);
         if (j?.ok) window.location.href = "/";
       }
     } catch {}
@@ -72,20 +71,29 @@ document.addEventListener("DOMContentLoaded", () => {
       const resp = await fetch("/auth/manual/verify", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
+        credentials: "same-origin",          // <-- REQUIRED so Set-Cookie sticks
+        redirect: "follow",
         body: JSON.stringify({ email, code }),
       });
 
-      let data; try { data = await resp.json(); }
-      catch { data = { ok: false, error: await resp.text() }; }
+      // Try to parse JSON; if it fails, show raw text
+      let data = null;
+      const text = await resp.text();
+      try { data = text ? JSON.parse(text) : null; } catch {}
 
       if (!resp.ok || !data?.ok) {
-        setMessage(data?.error || "Invalid or expired code.", true);
+        const msg =
+          (data && (data.error || data.message)) ||
+          (text && text.slice(0, 140)) ||
+          "Invalid or expired code.";
+        setMessage(msg, true);
         setBusy(false);
         return;
       }
 
       setMessage("Login successful! Redirecting…");
-      setTimeout(() => (window.location.href = "/"), 600);
+      // Give the browser a tick to persist the cookie before navigating
+      setTimeout(() => (window.location.href = "/"), 400);
     } catch (err) {
       setMessage("Could not reach server. Please try again.", true);
       setBusy(false);

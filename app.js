@@ -8,7 +8,7 @@ const XLSX = require('xlsx');
 const { parse: csvParse } = require('csv-parse/sync');
 
 const app = express();
-app.use(cors());
+app.use(cors({ origin: true, credentials: true }));
 app.use(express.json());
 app.use(express.static('public'));
 
@@ -160,7 +160,7 @@ function setCookie(res, name, value, opts = {}) {
   const {
     httpOnly = true,
     secure = isProd,
-    sameSite = 'Strict',
+    sameSite = 'Lax',
     path = '/',
     maxAge = 60 * 60 * 24 * 7
   } = opts;
