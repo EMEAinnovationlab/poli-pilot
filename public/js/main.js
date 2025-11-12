@@ -1,13 +1,22 @@
-// /js/main.js — ES module with top-level await
+// /public/js/main.js
+// ES module with top-level await. Ensure your HTML loads this with:
+// <script type="module" src="/js/main.js"></script>
 
-// ===== Imports (absolute paths avoid nesting issues) =====
+// ──────────────────────────────────────────────────────────
+// Imports (must be first)
+// ──────────────────────────────────────────────────────────
 import { enforceRole } from '/js/auth_guard.js';
 import { injectStraplineStyles } from '/js/strapline.js';
 import { openExamples, closeExamples, attachExampleFillHandlers } from '/js/examples.js';
 import { injectMarkdownStyles } from '/js/markdown.js';
 import { createChatController } from '/js/chatFlow.js';
 
-// ===== Ensure `marked` exists (use /js/markdown.js or ESM fallback) =====
+// ──────────────────────────────────────────────────────────
+/** Session gate: require any logged-in user (null) */
+await enforceRole({ requiredRole: null });
+
+// ──────────────────────────────────────────────────────────
+/** Markdown parser: prefer window.marked (from markdown.js), fallback to CDN */
 let markedRef = (typeof window !== 'undefined' && window.marked) ? window.marked : null;
 if (!markedRef) {
   try {
@@ -15,17 +24,13 @@ if (!markedRef) {
     markedRef = marked;
     if (typeof window !== 'undefined') window.marked = markedRef;
   } catch (e) {
-    console.error('Failed to load marked parser:', e);
+    console.warn('Marked ESM fallback failed; rendering raw markdown.', e);
   }
 }
 const parseMarkdown = (md) => (markedRef ? markedRef.parse(md || '') : (md || ''));
 
-// ===== Gate: require a session (null = any logged-in user) =====
-await enforceRole({ requiredRole: null });
-
-// ───────────────────────────────────────────────────────────
-// Config
-// ───────────────────────────────────────────────────────────
+// ──────────────────────────────────────────────────────────
+/** Config */
 const STRAPLINE = {
   enabled: true,
   iconUrl: '/images/brand/chat_icon.png',
@@ -42,10 +47,10 @@ You are the assistant in a chat UI. Greet the user briefly and offer 2–3 concr
 Keep it concise and friendly; no emojis. Avoid generic fluff.
 `;
 
-// Load introduction prompt from backend (Supabase → /project-settings)
+// Load introduction prompt from backend (via Vercel /api route)
 async function loadIntroPromptFromServer() {
   try {
-    const res = await fetch('/project-settings', { credentials: 'same-origin' });
+    const res = await fetch('/api/project-settings', { credentials: 'same-origin' });
     const data = await res.json();
     if (!res.ok || !data?.ok) throw new Error(data?.error || 'Failed to fetch settings');
     const intro = data.settings?.introduction_prompt;
@@ -56,9 +61,8 @@ async function loadIntroPromptFromServer() {
 }
 await loadIntroPromptFromServer();
 
-// ───────────────────────────────────────────────────────────
-// DOM
-// ───────────────────────────────────────────────────────────
+// ──────────────────────────────────────────────────────────
+/** DOM */
 const chat = document.getElementById('chat');
 const input = document.getElementById('input');
 const sendBtn = document.getElementById('send');
@@ -76,9 +80,8 @@ if (chat) {
   chat.setAttribute('aria-relevant', 'additions');
 }
 
-// ───────────────────────────────────────────────────────────
-// Styles
-// ───────────────────────────────────────────────────────────
+// ──────────────────────────────────────────────────────────
+/** Styles */
 injectMarkdownStyles();
 injectStraplineStyles({
   uppercase: STRAPLINE.uppercase,
@@ -87,17 +90,15 @@ injectStraplineStyles({
   color: STRAPLINE.color
 });
 
-// ───────────────────────────────────────────────────────────
-// Examples helpers
-// ───────────────────────────────────────────────────────────
+// ──────────────────────────────────────────────────────────
+/** Examples helpers bound with our DOM */
 const examples = {
   openExamples: () => openExamples(examplesContainer, examplesToggle),
   closeExamples: (opts) => closeExamples(examplesContainer, examplesToggle, opts)
 };
 
-// ───────────────────────────────────────────────────────────
-// Chat controller
-// ───────────────────────────────────────────────────────────
+// ──────────────────────────────────────────────────────────
+/** Chat controller */
 const controller = createChatController({
   dom: { chat, input, sendBtn, stopBtn, clearBtn },
   examples,
@@ -114,7 +115,7 @@ attachExampleFillHandlers({
 
 // Buttons / inputs
 if (sendBtn) sendBtn.addEventListener('click', controller.sendMessage);
-if (stopBtn) stopBtn.addEventListener('click', () => { /* abort handled inside chatFlow */ });
+if (stopBtn) stopBtn.addEventListener('click', () => { /* Abort handled in chatFlow */ });
 if (clearBtn) {
   clearBtn.addEventListener('click', () => {
     if (chat) chat.innerHTML = '';
@@ -169,15 +170,16 @@ if (chat && chat.children.length === 0) {
   });
 }
 
-// ───────────────────────────────────────────────────────────
-// Context Pages (About / How it works / Included Data)
-// ───────────────────────────────────────────────────────────
+// ──────────────────────────────────────────────────────────
+/** Context Pages (About / How it works / Included Data) */
+// ──────────────────────────────────────────────────────────
 const modal = document.getElementById('content-modal');
 const modalTitle = document.getElementById('pp-modal-title');
 const modalContent = document.getElementById('pp-modal-content');
 
 const titles = { about: 'Over Poli Pilot', how: 'Hoe het werkt', data: 'Data' };
-const pagesOrder = ['Over Poli Pilot', 'Hoe het werkt', 'Data'];
+// Use route tokens for keyboard cycling
+const pagesOrder = ['about', 'how', 'data'];
 
 function setModalOpen(open) {
   if (!modal) return;
@@ -194,7 +196,7 @@ modal?.addEventListener('click', (e) => {
 });
 window.addEventListener('keydown', (e) => { if (e.key === 'Escape') closeModal(); });
 
-// Modal nav (tabs)
+// Top-left hero nav (tabs)
 const navContainer = document.querySelector('.pp-modal__nav');
 const navButtons   = Array.from(document.querySelectorAll('.pp-modal__nav .pp-navbtn'));
 
@@ -216,12 +218,15 @@ navContainer?.addEventListener('click', (e) => {
   loadSitePage(page);
 });
 
+// Keyboard: Left/Right to switch tabs when modal is open
 window.addEventListener('keydown', (e) => {
   if (modal?.getAttribute('aria-hidden') === 'true') return;
   if (!['ArrowLeft','ArrowRight'].includes(e.key)) return;
+
   const current = navButtons.find(b => b.classList.contains('is-active'))?.dataset.page || pagesOrder[0];
   let idx = pagesOrder.indexOf(current);
   idx = e.key === 'ArrowRight' ? (idx + 1) % pagesOrder.length : (idx - 1 + pagesOrder.length) % pagesOrder.length;
+
   const page = pagesOrder[idx];
   history.pushState(null, '', `#${page}`);
   loadSitePage(page);
@@ -244,7 +249,7 @@ function renderIncludedDataTable(rows) {
   `;
 }
 
-// Load About / How / Data from your backend
+// Unified loader via /api routes
 async function loadSitePage(page) {
   const lang = (navigator.language || 'en').toLowerCase();
 
@@ -256,8 +261,8 @@ async function loadSitePage(page) {
   try {
     if (page === 'data') {
       const [contentRes, listRes] = await Promise.all([
-        fetch(`/site-content?page=data&lang=${encodeURIComponent(lang)}`),
-        fetch('/documents/list', { credentials: 'same-origin' })
+        fetch(`/api/site-content?page=data&lang=${encodeURIComponent(lang)}`),
+        fetch('/api/documents/list', { credentials: 'same-origin' })
       ]);
       const contentJson = await contentRes.json();
       const listJson = await listRes.json();
@@ -268,7 +273,7 @@ async function loadSitePage(page) {
       const tableHTML = renderIncludedDataTable(listJson.items || []);
       modalContent.innerHTML = `<div class="pp-context-intro">${introHTML}</div>${tableHTML}`;
     } else {
-      const r = await fetch(`/site-content?page=${encodeURIComponent(page)}&lang=${encodeURIComponent(lang)}`);
+      const r = await fetch(`/api/site-content?page=${encodeURIComponent(page)}&lang=${encodeURIComponent(lang)}`);
       const j = await r.json();
       if (!r.ok || !j?.ok) throw new Error(j?.error || `Failed to load ${page}`);
       modalContent.innerHTML = parseMarkdown(j.content || '');
@@ -295,9 +300,9 @@ function routeFromHash() {
 window.addEventListener('popstate', routeFromHash);
 routeFromHash();
 
-// ───────────────────────────────────────────────────────────
-// Load example prompts (public read via backend → Supabase)
-// ───────────────────────────────────────────────────────────
+// ──────────────────────────────────────────────────────────
+/** Load example prompts (public read via backend → Supabase) */
+// ──────────────────────────────────────────────────────────
 async function loadAndRenderExamplePrompts() {
   const grid = document.getElementById('examples-grid');
   if (!grid) return;
@@ -324,11 +329,11 @@ async function loadAndRenderExamplePrompts() {
           <div class="example-text">${full}</div>
         </div>
       `;
-    }).join('');
+    }).filter(Boolean).join('');
 
-    const exampleCards = grid.querySelectorAll('.example');
+    const cards = grid.querySelectorAll('.example');
     attachExampleFillHandlers({
-      exampleCards,
+      exampleCards: cards,
       input,
       autoGrowTextarea: controller.autoGrowTextarea,
       closeExamplesFn: examples.closeExamples
@@ -340,9 +345,9 @@ async function loadAndRenderExamplePrompts() {
 }
 await loadAndRenderExamplePrompts();
 
-// ───────────────────────────────────────────────────────────
-// Mobile drawer
-// ───────────────────────────────────────────────────────────
+// ──────────────────────────────────────────────────────────
+/** Mobile drawer */
+// ──────────────────────────────────────────────────────────
 (function setupMobileDrawer() {
   const drawer = document.getElementById('nav-drawer');
   const toggle = document.querySelector('.nav-toggle');
