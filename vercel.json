@@ -1,8 +1,5 @@
 {
   "version": 2,
-  "functions": {
-    "api/index.js": { "runtime": "nodejs20.x" }
-  },
   "routes": [
     { "src": "^/(chat|site-content|project-settings|health)$", "dest": "/api/index.js" },
     { "src": "^/(auth|admin|documents)(/.*)?$", "dest": "/api/index.js" },
