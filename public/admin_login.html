@@ -6,7 +6,7 @@
   <title>Admin Login — Poli Pilot</title>
   <link rel="stylesheet" href="/styles.css" />
   <link rel="stylesheet" href="/login.css" />
-  <script type="module" src="/js/admin_login.js" defer></script>
+  <script type="module" src="/js/admin_login.js"></script>
 </head>
 <body class="login-body">
   <div class="login-container">
@@ -14,19 +14,20 @@
       <div class="login-badge">ADMIN</div>
       <h1>Admin Portal</h1>
     </div>
+
     <div class="login-right">
       <img src="/images/brand/logo_icon_medium.png" alt="Poli Pilot logo" class="login-logo" />
       <h2>Admin Login</h2>
 
-      <form class="form">
+      <form id="admin-login-form" class="form" novalidate>
         <div class="form-group">
-          <input type="email" id="email" placeholder=" " required />
+          <input type="email" id="email" placeholder=" " autocomplete="username" required />
           <label for="email">E-MAIL</label>
         </div>
 
         <div class="form-row">
           <div class="form-group">
-            <input type="text" id="code" placeholder=" " required />
+            <input type="text" id="code" placeholder=" " inputmode="numeric" autocomplete="one-time-code" required />
             <label for="code">ADMIN CODE</label>
           </div>
 
@@ -38,11 +39,9 @@
     </div>
   </div>
 
-<script type="module">
-  import { applyProjectSettings } from '/js/project_settings.js';
-  applyProjectSettings();
-</script>
-
-
+  <script type="module">
+    import { applyProjectSettings } from '/js/project_settings.js';
+    applyProjectSettings();
+  </script>
 </body>
 </html>
