@@ -1,13 +1,17 @@
 {
   "version": 2,
-  "routes": [
-    { "src": "^/api/.*$", "dest": "/api/index.js" },
+  "cleanUrls": true,
+  "trailingSlash": false,
+  "rewrites": [
+    { "source": "/auth/:path*",            "destination": "https://tvixmkrjdgtpamplkxfz.functions.supabase.co/auth/:path*" },
+    { "source": "/admin/:path*",           "destination": "https://tvixmkrjdgtpamplkxfz.functions.supabase.co/admin/:path*" },
+    { "source": "/chat/:path*",            "destination": "https://tvixmkrjdgtpamplkxfz.functions.supabase.co/chat/:path*" },
+    { "source": "/documents/:path*",       "destination": "https://tvixmkrjdgtpamplkxfz.functions.supabase.co/documents/:path*" },
+    { "source": "/site-content",           "destination": "https://tvixmkrjdgtpamplkxfz.functions.supabase.co/site-content" },
+    { "source": "/project-settings",       "destination": "https://tvixmkrjdgtpamplkxfz.functions.supabase.co/project-settings" },
+    { "source": "/api/:path*",             "destination": "https://tvixmkrjdgtpamplkxfz.functions.supabase.co/:path*" },
+    { "source": "/health",                 "destination": "https://tvixmkrjdgtpamplkxfz.functions.supabase.co/health" },
 
-    { "src": "^/(chat|site-content|project-settings|health)$", "dest": "/api/index.js" },
-    { "src": "^/(auth|admin|documents)(/.*)?$", "dest": "/api/index.js" },
-
-    { "handle": "filesystem" },
-    { "src": "^/$", "dest": "/index.html" },
-    { "src": "^(?!/api/).*$", "dest": "/$1" }
+    { "source": "/((?!auth|admin|chat|documents|site-content|project-settings|api|health).*)", "destination": "/index.html" }
   ]
 }
