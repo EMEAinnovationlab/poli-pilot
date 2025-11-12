@@ -1,33 +1,42 @@
-import { enforceRole } from './auth_guard.js';
+// in main.js, right at the top
+try {
+  await enforceRole({ requiredRole: null });
+} catch (e) {
+  console.warn('enforceRole failed; continuing:', e);
+}
 
-await enforceRole({ requiredRole: null }); // any logged-in user
 
 
+// /js/main.js — ES module, top-level await enabled
 
-// --- Auth guard: redirect unauthenticated users ---
-(async () => {
+// ===== Module imports (absolute paths prevent nesting issues) =====
+import { enforceRole } from '/js/auth_guard.js';
+import { injectStraplineStyles } from '/js/strapline.js';
+import { openExamples, closeExamples, attachExampleFillHandlers } from '/js/examples.js';
+import { injectMarkdownStyles } from '/js/markdown.js';
+import { createChatController } from '/js/chatFlow.js';
+
+// ===== Ensure `marked` exists (either provided by /js/markdown.js or loaded here) =====
+let markedRef = (typeof window !== 'undefined' && window.marked) ? window.marked : null;
+if (!markedRef) {
   try {
-    const r = await fetch('/auth/me', { credentials: 'same-origin' });
-    if (!r.ok) throw 0;
-    const j = await r.json();
-    if (!j?.ok) throw 0;
-    // ✅ User is logged in → continue
-    console.log(`Signed in as ${j.user.email}`);
-  } catch {
-    // ❌ Not logged in → redirect to login.html
-    window.location.href = '/login.html';
+    // Lightweight ESM import fallback (no styles or extras)
+    const { marked } = await import('https://cdn.jsdelivr.net/npm/marked/lib/marked.esm.js');
+    markedRef = marked;
+    // Optionally expose to window so other legacy code can use it
+    if (typeof window !== 'undefined') window.marked = markedRef;
+  } catch (e) {
+    console.error('Failed to load marked parser:', e);
   }
-})();
+}
+const parseMarkdown = (md) => (markedRef ? markedRef.parse(md || '') : (md || ''));
 
+// ===== Gate: require a session (null = any logged-in user) =====
+await enforceRole({ requiredRole: null });
 
-// ===== Imports =====
-import { injectStraplineStyles } from './strapline.js';
-import { openExamples, closeExamples, attachExampleFillHandlers } from './examples.js';
-import { injectMarkdownStyles } from './markdown.js';
-import { createChatController } from './chatFlow.js';
-
-
-// -------- Config --------
+// ──────────────────────────────────────────────────────────────────────────
+// Config
+// ──────────────────────────────────────────────────────────────────────────
 const STRAPLINE = {
   enabled: true,
   iconUrl: '/images/brand/chat_icon.png',
@@ -36,7 +45,7 @@ const STRAPLINE = {
   uppercase: true,
   letterSpacing: '0.25em',
   fontSize: '12px',
-  color: '#8B6A2B',
+  color: '#8B6A2B'
 };
 
 let DEFAULT_WELCOME_PROMPT = `
@@ -44,33 +53,29 @@ You are the assistant in a chat UI. Greet the user briefly and offer 2–3 concr
 Keep it concise and friendly; no emojis. Avoid generic fluff.
 `;
 
+// Load introduction prompt from backend (Supabase → /project-settings)
 async function loadIntroPromptFromServer() {
   try {
-    const res = await fetch('/project-settings');
+    const res = await fetch('/project-settings', { credentials: 'same-origin' });
     const data = await res.json();
-    if (!res.ok || !data?.ok) throw new Error(data.error || 'Failed to fetch settings');
-
+    if (!res.ok || !data?.ok) throw new Error(data?.error || 'Failed to fetch settings');
     const intro = data.settings?.introduction_prompt;
-    if (intro && intro.trim()) {
-      DEFAULT_WELCOME_PROMPT = intro.trim();
-      console.log('🧠 Loaded introduction prompt from Supabase');
-    } else {
-      console.warn('⚠️ No introduction_prompt found, using default.');
-    }
+    if (intro && intro.trim()) DEFAULT_WELCOME_PROMPT = intro.trim();
   } catch (err) {
-    console.warn('⚠️ Could not load introduction prompt:', err);
+    console.warn('Intro prompt fallback used:', err?.message || err);
   }
 }
-
-// call once on load before chat initialization
 await loadIntroPromptFromServer();
 
-// -------- DOM --------
+// ──────────────────────────────────────────────────────────────────────────
+// DOM
+// ──────────────────────────────────────────────────────────────────────────
 const chat = document.getElementById('chat');
 const input = document.getElementById('input');
 const sendBtn = document.getElementById('send');
 const stopBtn = document.getElementById('stop');
 const clearBtn = document.getElementById('clear');
+
 const examplesContainer = document.getElementById('example-prompts');
 const closeExamplesBtn = document.getElementById('close-examples');
 const exampleCards = document.querySelectorAll('.example');
@@ -82,8 +87,9 @@ if (chat) {
   chat.setAttribute('aria-relevant', 'additions');
 }
 
-
-// -------- Styles --------
+// ──────────────────────────────────────────────────────────────────────────
+// Styles
+// ──────────────────────────────────────────────────────────────────────────
 injectMarkdownStyles();
 injectStraplineStyles({
   uppercase: STRAPLINE.uppercase,
@@ -92,23 +98,24 @@ injectStraplineStyles({
   color: STRAPLINE.color
 });
 
-
-// -------- Examples helpers bound with our DOM --------
+// ──────────────────────────────────────────────────────────────────────────
+// Examples helpers (bound to our DOM)
+// ──────────────────────────────────────────────────────────────────────────
 const examples = {
   openExamples: () => openExamples(examplesContainer, examplesToggle),
   closeExamples: (opts) => closeExamples(examplesContainer, examplesToggle, opts)
 };
 
-
-// -------- Chat controller --------
+// ──────────────────────────────────────────────────────────────────────────
+/** Chat controller */
+// ──────────────────────────────────────────────────────────────────────────
 const controller = createChatController({
   dom: { chat, input, sendBtn, stopBtn, clearBtn },
   examples,
   config: { STRAPLINE, DEFAULT_WELCOME_PROMPT }
 });
 
-
-// -------- Wire example cards (fill only, close panel) --------
+// Attach example fill handlers present at load
 attachExampleFillHandlers({
   exampleCards,
   input,
@@ -116,13 +123,12 @@ attachExampleFillHandlers({
   closeExamplesFn: examples.closeExamples
 });
 
-
-// -------- Buttons / inputs --------
+// Buttons / inputs
 if (sendBtn) sendBtn.addEventListener('click', controller.sendMessage);
-if (stopBtn) stopBtn.addEventListener('click', () => {}); // abort handled inside chatFlow
+if (stopBtn) stopBtn.addEventListener('click', () => {/* abort handled inside chatFlow */});
 if (clearBtn) {
   clearBtn.addEventListener('click', () => {
-    chat.innerHTML = '';
+    if (chat) chat.innerHTML = '';
     controller.resetTextareaHeight();
     examples.openExamples();
     window.scrollTo({ top: document.documentElement.scrollHeight, behavior: 'smooth' });
@@ -141,14 +147,11 @@ if (input) {
   controller.autoGrowTextarea();
 }
 
-// Keep examples visible on load; toggle button reflects panel state
-function maybeShowExamples() {
-  if (!examplesContainer) return;
-  if (chat.children.length === 0) {
-    examples.openExamples();
-  }
-}
-maybeShowExamples();
+// Keep examples visible on load if chat is empty
+(function maybeShowExamples() {
+  if (!examplesContainer || !chat) return;
+  if (chat.children.length === 0) examples.openExamples();
+})();
 
 if (examplesToggle && examplesContainer) {
   const isOpen = !examplesContainer.classList.contains('hide');
@@ -156,7 +159,9 @@ if (examplesToggle && examplesContainer) {
 }
 
 if (closeExamplesBtn) {
-  closeExamplesBtn.addEventListener('click', () => examples.closeExamples({ animate: true, scroll: true }));
+  closeExamplesBtn.addEventListener('click', () =>
+    examples.closeExamples({ animate: true, scroll: true })
+  );
 }
 if (examplesToggle) {
   examplesToggle.addEventListener('click', () => {
@@ -165,8 +170,7 @@ if (examplesToggle) {
   });
 }
 
-
-// -------- Auto-start assistant greeting (spinner → strapline INTRODUCTION → content) --------
+// Auto-start assistant greeting
 controller.setButtonsStreaming(false);
 if (chat && chat.children.length === 0) {
   controller.streamAssistantFromPrompt(DEFAULT_WELCOME_PROMPT, {
@@ -176,12 +180,9 @@ if (chat && chat.children.length === 0) {
   });
 }
 
-
-
-// ============================================================================
+// ──────────────────────────────────────────────────────────────────────────
 // Context Pages (About / How it works / Included Data)
-// ============================================================================
-
+// ──────────────────────────────────────────────────────────────────────────
 const modal = document.getElementById('content-modal');
 const modalTitle = document.getElementById('pp-modal-title');
 const modalContent = document.getElementById('pp-modal-content');
@@ -193,21 +194,18 @@ function setModalOpen(open) {
   if (!modal) return;
   modal.setAttribute('aria-hidden', open ? 'false' : 'true');
   modal.classList.toggle('open', open);
-  document.body.style.overflow = open ? 'hidden' : ''; // lock scroll
+  document.body.style.overflow = open ? 'hidden' : '';
 }
-
 function closeModal() {
   setModalOpen(false);
   history.replaceState(null, '', location.pathname);
 }
-
 modal?.addEventListener('click', (e) => {
   if (e.target.matches('[data-close], .pp-modal__backdrop')) closeModal();
 });
 window.addEventListener('keydown', (e) => { if (e.key === 'Escape') closeModal(); });
 
-
-// --- Hero nav buttons (top-left over hero) ---
+// Top-left hero nav (tabs)
 const navContainer = document.querySelector('.pp-modal__nav');
 const navButtons   = Array.from(document.querySelectorAll('.pp-modal__nav .pp-navbtn'));
 
@@ -229,26 +227,20 @@ navContainer?.addEventListener('click', (e) => {
   loadSitePage(page);
 });
 
-// Keyboard: Left/Right to switch tabs when modal is open
 window.addEventListener('keydown', (e) => {
   if (modal?.getAttribute('aria-hidden') === 'true') return;
   if (!['ArrowLeft','ArrowRight'].includes(e.key)) return;
-
   const current = navButtons.find(b => b.classList.contains('is-active'))?.dataset.page || pagesOrder[0];
   let idx = pagesOrder.indexOf(current);
   idx = e.key === 'ArrowRight' ? (idx + 1) % pagesOrder.length : (idx - 1 + pagesOrder.length) % pagesOrder.length;
-
   const page = pagesOrder[idx];
   history.pushState(null, '', `#${page}`);
   loadSitePage(page);
 });
 
-
-// --- table renderer for Included Data ---
+// Included Data table renderer
 function renderIncludedDataTable(rows) {
-  if (!rows || rows.length === 0) {
-    return '<p class="muted">No documents found.</p>';
-  }
+  if (!rows || rows.length === 0) return '<p class="muted">No documents found.</p>';
   const body = rows.map(r => `
     <tr>
       <td>${(r.doc_name ?? '').toString().replace(/</g,'&lt;')}</td>
@@ -263,62 +255,49 @@ function renderIncludedDataTable(rows) {
   `;
 }
 
-
-// --- single, unified loader (no overrides/duplication) ---
+// Loads About / How / Data from your backend
 async function loadSitePage(page) {
   const lang = (navigator.language || 'en').toLowerCase();
 
   setActiveNav(page);
   setModalOpen(true);
-  modalTitle.textContent = titles[page] || page;
-  modalContent.innerHTML = '<p class="muted">Loading…</p>';
+  if (modalTitle) modalTitle.textContent = titles[page] || page;
+  if (modalContent) modalContent.innerHTML = '<p class="muted">Loading…</p>';
 
   try {
     if (page === 'data') {
-      // Get intro content + list in parallel; list ordered by uploaded_by asc, doc_name asc (server-side)
       const [contentRes, listRes] = await Promise.all([
         fetch(`/site-content?page=data&lang=${encodeURIComponent(lang)}`),
         fetch('/documents/list', { credentials: 'same-origin' })
       ]);
-
       const contentJson = await contentRes.json();
       const listJson = await listRes.json();
-
       if (!contentRes.ok || !contentJson?.ok) throw new Error(contentJson?.error || 'Failed to load page content');
       if (!listRes.ok || !listJson?.ok) throw new Error(listJson?.error || 'Failed to load document list');
 
-      const introHTML = marked.parse(contentJson.content || '');
+      const introHTML = parseMarkdown(contentJson.content || '');
       const tableHTML = renderIncludedDataTable(listJson.items || []);
-
-      modalContent.innerHTML = `
-        <div class="pp-context-intro">${introHTML}</div>
-        ${tableHTML}
-      `;
+      modalContent.innerHTML = `<div class="pp-context-intro">${introHTML}</div>${tableHTML}`;
     } else {
       const r = await fetch(`/site-content?page=${encodeURIComponent(page)}&lang=${encodeURIComponent(lang)}`);
       const j = await r.json();
       if (!r.ok || !j?.ok) throw new Error(j?.error || `Failed to load ${page}`);
-      modalContent.innerHTML = marked.parse(j.content || '');
+      modalContent.innerHTML = parseMarkdown(j.content || '');
     }
-
-    // focus the active tab for accessibility
     document.querySelector('.pp-modal__nav .pp-navbtn.is-active')?.focus();
   } catch (err) {
     modalContent.innerHTML = `<p style="color:#b10000">${String(err.message || err)}</p>`;
   }
 }
 
-
-
-
-// --- link hooks and deep-link routing ---
+// Link hooks + deep linking
 const linkAbout = document.querySelector('a[href="#about"]');
 const linkHow   = document.querySelector('a[href="#how"]');
 const linkData  = document.querySelector('a[href="#data"]');
 
 linkAbout?.addEventListener('click', (e) => { e.preventDefault(); history.pushState(null,'','#about'); loadSitePage('about'); });
-linkHow  ?.addEventListener('click', (e) => { e.preventDefault(); history.pushState(null,'','#how');   loadSitePage('how');   });
-linkData ?.addEventListener('click', (e) => { e.preventDefault(); history.pushState(null,'','#data');  loadSitePage('data');  });
+linkHow  ?.addEventListener('click',  (e) => { e.preventDefault(); history.pushState(null,'','#how');   loadSitePage('how');   });
+linkData ?.addEventListener('click',  (e) => { e.preventDefault(); history.pushState(null,'','#data');  loadSitePage('data');  });
 
 function routeFromHash() {
   const h = (location.hash || '').toLowerCase().replace('#','');
@@ -327,9 +306,9 @@ function routeFromHash() {
 window.addEventListener('popstate', routeFromHash);
 routeFromHash();
 
-
-
-// --- Load example prompts from Supabase via the backend ---
+// ──────────────────────────────────────────────────────────────────────────
+// Load example prompts (public read via backend → Supabase)
+// ──────────────────────────────────────────────────────────────────────────
 async function loadAndRenderExamplePrompts() {
   const grid = document.getElementById('examples-grid');
   if (!grid) return;
@@ -358,7 +337,6 @@ async function loadAndRenderExamplePrompts() {
       `;
     }).join('');
 
-    // reattach click handlers
     const exampleCards = grid.querySelectorAll('.example');
     attachExampleFillHandlers({
       exampleCards,
@@ -367,17 +345,15 @@ async function loadAndRenderExamplePrompts() {
       closeExamplesFn: examples.closeExamples
     });
   } catch (err) {
-    console.error('⚠️ Could not load example prompts:', err);
+    console.error('Could not load example prompts:', err);
     grid.innerHTML = `<div class="muted">Couldn’t load example prompts.</div>`;
   }
 }
+await loadAndRenderExamplePrompts();
 
-// Call once on load
-loadAndRenderExamplePrompts();
-
-
-
-// --- Mobile drawer toggle ---
+// ──────────────────────────────────────────────────────────────────────────
+// Mobile drawer
+// ──────────────────────────────────────────────────────────────────────────
 (function setupMobileDrawer() {
   const drawer = document.getElementById('nav-drawer');
   const toggle = document.querySelector('.nav-toggle');
@@ -389,41 +365,30 @@ loadAndRenderExamplePrompts();
     toggle.setAttribute('aria-expanded', 'true');
     document.body.classList.add('no-scroll');
   };
-
   const closeDrawer = () => {
     drawer.classList.add('hide');
     drawer.setAttribute('aria-modal', 'false');
     toggle.setAttribute('aria-expanded', 'false');
     document.body.classList.remove('no-scroll');
   };
-
   const isOpen = () => !drawer.classList.contains('hide');
-
   const toggleDrawer = () => (isOpen() ? closeDrawer() : openDrawer());
 
-  // Button click
-  toggle.addEventListener('click', (e) => {
-    e.preventDefault();
-    toggleDrawer();
-  });
+  toggle.addEventListener('click', (e) => { e.preventDefault(); toggleDrawer(); });
 
-  // Close on any link click inside the drawer
   drawer.addEventListener('click', (e) => {
     const a = e.target.closest('a');
     if (a) closeDrawer();
   });
 
-  // Close on Escape
   document.addEventListener('keydown', (e) => {
     if (e.key === 'Escape' && isOpen()) closeDrawer();
   });
 
-  // Close if viewport becomes desktop size again
   window.addEventListener('resize', () => {
     if (window.innerWidth > 820 && isOpen()) closeDrawer();
   });
 
-  // Optional: click outside to close (only when open)
   document.addEventListener('click', (e) => {
     if (!isOpen()) return;
     const clickedInside = e.target.closest('#nav-drawer') || e.target.closest('.nav-toggle');

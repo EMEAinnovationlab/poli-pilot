@@ -1,30 +1,42 @@
 // /js/auth_guard.js
-export async function enforceRole({ requiredRole = null, redirectIfUnauthorized = true } = {}) {
+export async function enforceRole({
+  requiredRole = null,
+  redirectIfUnauthorized = false,   // default: don't bounce while developing
+  endpoint = '/api/me',             // use '/auth/me' if you really have that route
+  timeoutMs = 5000
+} = {}) {
   try {
-    const resp = await fetch('/auth/me', { credentials: 'same-origin' });
-    if (!resp.ok) throw new Error('unauthorized');
+    const ctrl = new AbortController();
+    const to = setTimeout(() => ctrl.abort(), timeoutMs);
+
+    const resp = await fetch(endpoint, {
+      credentials: 'same-origin',
+      signal: ctrl.signal,
+    });
+    clearTimeout(to);
+
+    if (!resp.ok) throw new Error(`auth ${resp.status}`);
     const data = await resp.json();
+    const user = data?.user ?? null;
+    const role = user?.role ?? null;
 
-    if (!data?.ok || !data.user) throw new Error('unauthorized');
-
-    const { role } = data.user;
-
-    // if a role is required and doesn't match
     if (requiredRole && role !== requiredRole) {
       if (redirectIfUnauthorized) {
-        window.location.href =
-          requiredRole === 'admin' ? '/admin-login.html' : '/login.html';
+        window.location.href = requiredRole === 'admin'
+          ? '/admin_login.html' // underscore matches your file
+          : '/login.html';
       }
-      return false;
+      return { ok: false, user };
     }
 
-    // ✅ Authorized
-    return true;
+    return { ok: true, user };
   } catch (err) {
+    console.warn('Auth check failed; continuing:', err);
     if (redirectIfUnauthorized) {
-      window.location.href =
-        requiredRole === 'admin' ? '/admin_login.html' : '/login.html';
+      window.location.href = requiredRole === 'admin'
+        ? '/admin_login.html'
+        : '/login.html';
     }
-    return false;
+    return { ok: false, user: null };
   }
 }
