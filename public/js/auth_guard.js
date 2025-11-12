@@ -1,64 +1,100 @@
-// /public/js/auth_guard.js
-// Small helper to ensure the user has a valid session cookie (pp_session).
-// Usage (in any ES module):  import { enforceRole } from '/js/auth_guard.js';
-// await enforceRole({ requiredRole: null });
+// /js/auth_guard.js
 
-export async function enforceRole({
-  // null  = any logged-in user
-  // 'admin' or 'member' = enforce that specific role
-  requiredRole = null,
-  redirectIfUnauthorized = false,
-  // IMPORTANT: your API exposes /api/auth/me (not /api/me)
-  endpoint = '/api/auth/me',
-  timeoutMs = 5000
-} = {}) {
-  const c = new AbortController();
-  const t = setTimeout(() => c.abort(), timeoutMs);
-
+/**
+ * Fetch current session info from the backend.
+ * Returns: { ok: boolean, user?: { email: string, role: 'member'|'admin' } }
+ */
+export async function getSession() {
   try {
-    const r = await fetch(endpoint, {
-      credentials: 'same-origin',
-      signal: c.signal
-    });
-    clearTimeout(t);
-
-    // When the function is misrouted, Vercel returns HTML (not JSON).
-    // Try to parse JSON and gracefully handle HTML/error text.
-    let data = null;
-    try {
-      data = await r.json();
-    } catch {
-      const text = await r.text().catch(() => '');
-      const msg = text?.slice(0, 160) || 'Non-JSON response from auth endpoint';
-      throw new Error(msg);
-    }
-
-    if (!r.ok || !data?.ok) {
-      if (redirectIfUnauthorized) {
-        window.location.href = '/login.html';
-        return;
-      }
-      throw new Error('Unauthorized');
-    }
-
-    // If a specific role is required, check it
-    if (requiredRole && data?.user?.role !== requiredRole) {
-      if (redirectIfUnauthorized) {
-        window.location.href = '/login.html';
-        return;
-      }
-      throw new Error('Forbidden: role mismatch');
-    }
-
-    // All good
-    return data?.user || null;
-  } catch (err) {
-    // Don’t hard-fail the page; let caller decide what to do.
-    console.warn('Auth check failed; continuing:', err);
-    if (redirectIfUnauthorized) {
-      window.location.href = '/login.html';
-    }
-    // Re-throw in case caller wants to handle it
-    throw err;
+    const resp = await fetch('/auth/me', { credentials: 'same-origin' });
+    // If not OK, return a consistent shape
+    if (!resp.ok) return { ok: false };
+    // Try to parse JSON; if it fails, treat as not authenticated
+    const data = await resp.json().catch(() => ({ ok: false }));
+    return (data && typeof data === 'object') ? data : { ok: false };
+  } catch {
+    return { ok: false };
   }
+}
+
+/**
+ * Convenience: boolean "is someone logged in?"
+ */
+export async function isLoggedIn() {
+  const s = await getSession();
+  return !!(s.ok && s.user && s.user.email);
+}
+
+/**
+ * Enforce an auth requirement on a page.
+ *
+ * @param {Object} opts
+ * @param {'admin'|'member'|null} opts.requiredRole - null = any logged-in, 'member' = member or admin, 'admin' = admin only
+ * @param {boolean} [opts.redirectIfUnauthorized=true] - whether to redirect if requirement fails
+ * @param {string}  [opts.loginPath='/login.html'] - where to send general users who need to log in
+ * @param {string}  [opts.adminLoginPath='/admin_login.html'] - where to send users for admin-only pages
+ * @param {(reason: 'unauthenticated'|'forbidden', session: any) => void} [opts.onUnauthorized] - optional hook before redirect
+ *
+ * @returns {Promise<boolean>} true if allowed to continue, false otherwise
+ */
+export async function enforceRole({
+  requiredRole = null,
+  redirectIfUnauthorized = true,
+  loginPath = '/login.html',
+  adminLoginPath = '/admin_login.html',
+  onUnauthorized
+} = {}) {
+
+  const session = await getSession();
+
+  // Not logged in at all
+  if (!session.ok || !session.user) {
+    if (onUnauthorized) onUnauthorized('unauthenticated', session);
+    if (redirectIfUnauthorized) {
+      // Admin-only pages send users to the admin login page; others go to general login
+      window.location.href = (requiredRole === 'admin') ? adminLoginPath : loginPath;
+    }
+    return false;
+  }
+
+  const role = session.user.role;
+
+  // Evaluate role requirement
+  const roleAllowed =
+    requiredRole === null ? (role === 'member' || role === 'admin') :
+    requiredRole === 'member' ? (role === 'member' || role === 'admin') :
+    requiredRole === 'admin' ? (role === 'admin') :
+    false;
+
+  if (!roleAllowed) {
+    if (onUnauthorized) onUnauthorized('forbidden', session);
+    if (redirectIfUnauthorized) {
+      // If page is admin-only but user isn't admin, send to admin login
+      if (requiredRole === 'admin') {
+        window.location.href = adminLoginPath;
+      } else {
+        window.location.href = loginPath;
+      }
+    }
+    return false;
+  }
+
+  // All good
+  return true;
+}
+
+/**
+ * Utility: ensure user is logged in (member or admin).
+ * Redirects to /login.html if not.
+ */
+export async function requireAuth() {
+  return enforceRole({ requiredRole: null });
+}
+
+/**
+ * Utility: ensure user is admin.
+ * Redirects to /admin_login.html if not.
+ */
+export async function requireAdmin() {
+  return enforceRole({ requiredRole: 'admin' });
 }
