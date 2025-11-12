@@ -1,29 +1,18 @@
-// in main.js, right at the top
-try {
-  await enforceRole({ requiredRole: null });
-} catch (e) {
-  console.warn('enforceRole failed; continuing:', e);
-}
+// /js/main.js — ES module with top-level await
 
-
-
-// /js/main.js — ES module, top-level await enabled
-
-// ===== Module imports (absolute paths prevent nesting issues) =====
+// ===== Imports (absolute paths avoid nesting issues) =====
 import { enforceRole } from '/js/auth_guard.js';
 import { injectStraplineStyles } from '/js/strapline.js';
 import { openExamples, closeExamples, attachExampleFillHandlers } from '/js/examples.js';
 import { injectMarkdownStyles } from '/js/markdown.js';
 import { createChatController } from '/js/chatFlow.js';
 
-// ===== Ensure `marked` exists (either provided by /js/markdown.js or loaded here) =====
+// ===== Ensure `marked` exists (use /js/markdown.js or ESM fallback) =====
 let markedRef = (typeof window !== 'undefined' && window.marked) ? window.marked : null;
 if (!markedRef) {
   try {
-    // Lightweight ESM import fallback (no styles or extras)
     const { marked } = await import('https://cdn.jsdelivr.net/npm/marked/lib/marked.esm.js');
     markedRef = marked;
-    // Optionally expose to window so other legacy code can use it
     if (typeof window !== 'undefined') window.marked = markedRef;
   } catch (e) {
     console.error('Failed to load marked parser:', e);
@@ -34,9 +23,9 @@ const parseMarkdown = (md) => (markedRef ? markedRef.parse(md || '') : (md || ''
 // ===== Gate: require a session (null = any logged-in user) =====
 await enforceRole({ requiredRole: null });
 
-// ──────────────────────────────────────────────────────────────────────────
+// ───────────────────────────────────────────────────────────
 // Config
-// ──────────────────────────────────────────────────────────────────────────
+// ───────────────────────────────────────────────────────────
 const STRAPLINE = {
   enabled: true,
   iconUrl: '/images/brand/chat_icon.png',
@@ -67,9 +56,9 @@ async function loadIntroPromptFromServer() {
 }
 await loadIntroPromptFromServer();
 
-// ──────────────────────────────────────────────────────────────────────────
+// ───────────────────────────────────────────────────────────
 // DOM
-// ──────────────────────────────────────────────────────────────────────────
+// ───────────────────────────────────────────────────────────
 const chat = document.getElementById('chat');
 const input = document.getElementById('input');
 const sendBtn = document.getElementById('send');
@@ -87,9 +76,9 @@ if (chat) {
   chat.setAttribute('aria-relevant', 'additions');
 }
 
-// ──────────────────────────────────────────────────────────────────────────
+// ───────────────────────────────────────────────────────────
 // Styles
-// ──────────────────────────────────────────────────────────────────────────
+// ───────────────────────────────────────────────────────────
 injectMarkdownStyles();
 injectStraplineStyles({
   uppercase: STRAPLINE.uppercase,
@@ -98,17 +87,17 @@ injectStraplineStyles({
   color: STRAPLINE.color
 });
 
-// ──────────────────────────────────────────────────────────────────────────
-// Examples helpers (bound to our DOM)
-// ──────────────────────────────────────────────────────────────────────────
+// ───────────────────────────────────────────────────────────
+// Examples helpers
+// ───────────────────────────────────────────────────────────
 const examples = {
   openExamples: () => openExamples(examplesContainer, examplesToggle),
   closeExamples: (opts) => closeExamples(examplesContainer, examplesToggle, opts)
 };
 
-// ──────────────────────────────────────────────────────────────────────────
-/** Chat controller */
-// ──────────────────────────────────────────────────────────────────────────
+// ───────────────────────────────────────────────────────────
+// Chat controller
+// ───────────────────────────────────────────────────────────
 const controller = createChatController({
   dom: { chat, input, sendBtn, stopBtn, clearBtn },
   examples,
@@ -125,7 +114,7 @@ attachExampleFillHandlers({
 
 // Buttons / inputs
 if (sendBtn) sendBtn.addEventListener('click', controller.sendMessage);
-if (stopBtn) stopBtn.addEventListener('click', () => {/* abort handled inside chatFlow */});
+if (stopBtn) stopBtn.addEventListener('click', () => { /* abort handled inside chatFlow */ });
 if (clearBtn) {
   clearBtn.addEventListener('click', () => {
     if (chat) chat.innerHTML = '';
@@ -180,9 +169,9 @@ if (chat && chat.children.length === 0) {
   });
 }
 
-// ──────────────────────────────────────────────────────────────────────────
+// ───────────────────────────────────────────────────────────
 // Context Pages (About / How it works / Included Data)
-// ──────────────────────────────────────────────────────────────────────────
+// ───────────────────────────────────────────────────────────
 const modal = document.getElementById('content-modal');
 const modalTitle = document.getElementById('pp-modal-title');
 const modalContent = document.getElementById('pp-modal-content');
@@ -205,7 +194,7 @@ modal?.addEventListener('click', (e) => {
 });
 window.addEventListener('keydown', (e) => { if (e.key === 'Escape') closeModal(); });
 
-// Top-left hero nav (tabs)
+// Modal nav (tabs)
 const navContainer = document.querySelector('.pp-modal__nav');
 const navButtons   = Array.from(document.querySelectorAll('.pp-modal__nav .pp-navbtn'));
 
@@ -255,7 +244,7 @@ function renderIncludedDataTable(rows) {
   `;
 }
 
-// Loads About / How / Data from your backend
+// Load About / How / Data from your backend
 async function loadSitePage(page) {
   const lang = (navigator.language || 'en').toLowerCase();
 
@@ -306,9 +295,9 @@ function routeFromHash() {
 window.addEventListener('popstate', routeFromHash);
 routeFromHash();
 
-// ──────────────────────────────────────────────────────────────────────────
+// ───────────────────────────────────────────────────────────
 // Load example prompts (public read via backend → Supabase)
-// ──────────────────────────────────────────────────────────────────────────
+// ───────────────────────────────────────────────────────────
 async function loadAndRenderExamplePrompts() {
   const grid = document.getElementById('examples-grid');
   if (!grid) return;
@@ -351,9 +340,9 @@ async function loadAndRenderExamplePrompts() {
 }
 await loadAndRenderExamplePrompts();
 
-// ──────────────────────────────────────────────────────────────────────────
+// ───────────────────────────────────────────────────────────
 // Mobile drawer
-// ──────────────────────────────────────────────────────────────────────────
+// ───────────────────────────────────────────────────────────
 (function setupMobileDrawer() {
   const drawer = document.getElementById('nav-drawer');
   const toggle = document.querySelector('.nav-toggle');

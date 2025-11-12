@@ -8,7 +8,7 @@ const cors = require('cors');
 const Busboy = require('busboy');
 const XLSX = require('xlsx');
 const { parse: csvParse } = require('csv-parse/sync');
-const OpenAI = require('openai');
+// ❌ Removed: const OpenAI = require('openai');
 
 const app = express();
 app.use(cors());
@@ -81,7 +81,6 @@ async function supabaseRest(path, { method='GET', body, headers={} } = {}) {
   if (method !== 'GET') {
     console.log(`[Supabase REST ${method}] ${url} -> ${r.status} OK`);
   }
-  // expose headers when needed (e.g., count via return=representation)
   return Object.assign(json ?? {}, { _headers: Object.fromEntries(r.headers.entries()) });
 }
 
@@ -162,7 +161,7 @@ function setCookie(res, name, value, opts = {}) {
     `SameSite=${sameSite}`,
   ];
   if (httpOnly) parts.push('HttpOnly');
-  if (secure) parts.push('Secure'); // ✅ fixed
+  if (secure) parts.push('Secure');
   res.setHeader('Set-Cookie', parts.join('; '));
 }
 function clearCookie(res, name) {
@@ -176,6 +175,24 @@ function parseCookies(req) {
     acc[k] = decodeURIComponent(v.join('='));
     return acc;
   }, {});
+}
+
+// ── OpenAI REST helper for embeddings (avoids ESM SDK) ─────
+async function createEmbeddingsBatch({ model, inputs, apiKey }) {
+  const r = await fetch('https://api.openai.com/v1/embeddings', {
+    method: 'POST',
+    headers: {
+      'Authorization': `Bearer ${apiKey}`,
+      'Content-Type': 'application/json'
+    },
+    body: JSON.stringify({ model, input: inputs })
+  });
+  if (!r.ok) {
+    const txt = await r.text().catch(() => '');
+    throw new Error(`OpenAI embeddings failed: ${r.status} ${txt}`);
+  }
+  const json = await r.json();
+  return (json?.data || []).map(d => d.embedding || null);
 }
 
 // ─── Health ───────────────────────────────────────────────
@@ -463,7 +480,6 @@ app.get('/documents/list-raw', requireAdmin, async (req, res) => {
 });
 
 // ─── Documents: delete by doc_name (single & bulk) ─────────
-// Bulk: { "doc_names": ["Doc A", "Doc B"] }
 app.delete('/documents', requireAdmin, async (req, res) => {
   try {
     const docNames = Array.isArray(req.body?.doc_names) ? req.body.doc_names : [];
@@ -473,7 +489,6 @@ app.delete('/documents', requireAdmin, async (req, res) => {
     for (const raw of docNames) {
       const name = String(raw || '').trim();
       if (!name) continue;
-      // Prefer returning representation so we can count rows
       const out = await supabaseRest(
         `/documents?doc_name=eq.${encodeURIComponent(name)}`,
         { method: 'DELETE', headers: { Prefer: 'return=representation' } }
@@ -679,7 +694,6 @@ function readSpreadsheetFile(filename, buffer) {
 }
 
 function normalizeRowFromSheet(row) {
-  // Intentionally DO NOT read doc_name or uploaded_by from the sheet.
   const get = (k) => row[k] ?? row[k?.toLowerCase?.()] ?? row[k?.toUpperCase?.()];
   const datum = (get('datum') || '').toString();
   const naam = (get('naam') || '').toString();
@@ -741,8 +755,8 @@ app.post('/admin/ingest', requireAdmin, async (req, res) => {
   try {
     const { fields, file } = await readMultipart(req);
     const action = String(fields.action || '').toLowerCase();     // 'preview' | 'upload'
-    const input_doc_name = (fields.doc_name || '').trim();        // REQUIRED: from form
-    const input_uploaded_by = (fields.uploaded_by || '').trim();  // REQUIRED: from form
+    const input_doc_name = (fields.doc_name || '').trim();        // REQUIRED
+    const input_uploaded_by = (fields.uploaded_by || '').trim();  // REQUIRED
 
     if (!file?.buffer?.length) return res.status(400).json({ ok: false, error: 'Missing file' });
     if (!input_doc_name) return res.status(400).json({ ok: false, error: 'Missing form field: doc_name' });
@@ -754,14 +768,10 @@ app.post('/admin/ingest', requireAdmin, async (req, res) => {
       return res.status(400).json({ ok: false, error: 'No rows found in spreadsheet' });
     }
 
-    // 2) Normalize rows to expected shape (NO doc_name / uploaded_by taken from sheet)
+    // 2) Normalize rows (NO doc_name / uploaded_by from sheet)
     let normalized = rawRows.map(r => {
       const core = normalizeRowFromSheet(r);
-      return {
-        ...core,
-        doc_name: input_doc_name,
-        uploaded_by: input_uploaded_by,
-      };
+      return { ...core, doc_name: input_doc_name, uploaded_by: input_uploaded_by };
     });
 
     // 3) Resolve document_id once (single doc per upload)
@@ -796,15 +806,14 @@ app.post('/admin/ingest', requireAdmin, async (req, res) => {
       }
 
       // 5) Create embeddings (or skip if DRY_RUN_EMBEDDINGS=1)
-      let contentEmb = null, invloedEmb = null;
+      let contentEmbVectors = null, invloedEmbVectors = null;
       try {
         if (!DRY_RUN_EMBEDDINGS) {
-          const client = new OpenAI({ apiKey: OPENAI_API_KEY });
           const contentInputs = previewRows.map(r => r.content || '');
           const invloedInputs = previewRows.map(r => r.invloed_text || '');
           console.log(`Creating embeddings: content=${contentInputs.length}, invloed=${invloedInputs.length}, model=${EMBED_MODEL}`);
-          contentEmb = await client.embeddings.create({ model: EMBED_MODEL, input: contentInputs });
-          invloedEmb = await client.embeddings.create({ model: EMBED_MODEL, input: invloedInputs });
+          contentEmbVectors = await createEmbeddingsBatch({ model: EMBED_MODEL, inputs: contentInputs, apiKey: OPENAI_API_KEY });
+          invloedEmbVectors = await createEmbeddingsBatch({ model: EMBED_MODEL, inputs: invloedInputs, apiKey: OPENAI_API_KEY });
           console.log('Embeddings created OK');
         } else {
           console.warn('DRY_RUN_EMBEDDINGS=1 → skipping OpenAI calls, writing null vectors.');
@@ -819,10 +828,10 @@ app.post('/admin/ingest', requireAdmin, async (req, res) => {
 
       const upsertRows = previewRows.map((r, i) => ({
         ...r,
-        embedding: DRY_RUN_EMBEDDINGS ? null : (contentEmb?.data?.[i]?.embedding || null),
+        embedding: DRY_RUN_EMBEDDINGS ? null : (contentEmbVectors?.[i] || null),
         invloed_embedding: DRY_RUN_EMBEDDINGS
           ? null
-          : ((r.invloed_text || '').trim() ? (invloedEmb?.data?.[i]?.embedding || null) : null),
+          : ((r.invloed_text || '').trim() ? (invloedEmbVectors?.[i] || null) : null),
         metadata: { source: 'admin_ingest_spreadsheet' },
         date_uploaded: today
       }));
@@ -845,12 +854,9 @@ app.post('/admin/ingest', requireAdmin, async (req, res) => {
 });
 
 // ─── Admin: Users & Login Codes overview ──────────────────
-// Requires the SQL view: public.user_login_overview (see earlier step)
 app.get('/api/admin/users_overview', requireAdmin, async (req, res) => {
   try {
-    const rows = await supabaseRest(
-      `/user_login_overview?select=*&order=email.asc`
-    );
+    const rows = await supabaseRest(`/user_login_overview?select=*&order=email.asc`);
     const data = Array.isArray(rows) ? rows : [];
     res.json({ ok: true, count: data.length, data });
   } catch (e) {
@@ -858,15 +864,7 @@ app.get('/api/admin/users_overview', requireAdmin, async (req, res) => {
   }
 });
 
-
-// ─── Admin: Create/Update user, Delete user ─────────────────────────────
-/**
- * POST /admin/users
- * Body: { email: string, role: 'member' | 'admin' }
- * - If user exists → update role
- * - Else → insert new user
- * Your DB trigger will auto-create the proper login code.
- */
+// ─── Admin: Create/Update user, Delete user ────────────────
 app.post('/admin/users', requireAdmin, async (req, res) => {
   try {
     const email = String(req.body?.email || '').trim().toLowerCase();
@@ -878,10 +876,8 @@ app.post('/admin/users', requireAdmin, async (req, res) => {
       return res.status(400).json({ ok: false, error: "Role must be 'member' or 'admin'" });
     }
 
-    // Check if user exists
     const existing = await supabaseRest(`/users?select=email,role&email=eq.${encodeURIComponent(email)}&limit=1`);
     if (Array.isArray(existing) && existing.length) {
-      // Update role
       const out = await supabaseRest(`/users?email=eq.${encodeURIComponent(email)}`, {
         method: 'PATCH',
         headers: { Prefer: 'return=representation' },
@@ -889,7 +885,6 @@ app.post('/admin/users', requireAdmin, async (req, res) => {
       });
       return res.json({ ok: true, mode: 'updated', user: Array.isArray(out) ? out[0] : out });
     } else {
-      // Insert new
       const out = await supabaseRest(`/users`, {
         method: 'POST',
         headers: { Prefer: 'return=representation' },
@@ -902,17 +897,11 @@ app.post('/admin/users', requireAdmin, async (req, res) => {
   }
 });
 
-/**
- * DELETE /admin/users/:email
- * - Removes codes in both tables for that email
- * - Removes the user
- */
 app.delete('/admin/users/:email', requireAdmin, async (req, res) => {
   try {
     const email = String(decodeURIComponent(req.params.email || '')).trim().toLowerCase();
     if (!email) return res.status(400).json({ ok: false, error: 'Missing email' });
 
-    // Clean up codes first (safe even if none exist)
     await supabaseRest(`/login_codes?email=eq.${encodeURIComponent(email)}`, {
       method: 'DELETE',
       headers: { Prefer: 'return=representation' }
@@ -923,7 +912,6 @@ app.delete('/admin/users/:email', requireAdmin, async (req, res) => {
       headers: { Prefer: 'return=representation' }
     }).catch(() => {});
 
-    // Delete user
     const del = await supabaseRest(`/users?email=eq.${encodeURIComponent(email)}`, {
       method: 'DELETE',
       headers: { Prefer: 'return=representation' }
@@ -935,7 +923,6 @@ app.delete('/admin/users/:email', requireAdmin, async (req, res) => {
     return res.status(500).json({ ok: false, error: String(e.message || e) });
   }
 });
-
 
 // ─── Diagnostics (admin-only) ──────────────────────────────
 app.get('/admin/debug/env', requireAdmin, (req, res) => {
