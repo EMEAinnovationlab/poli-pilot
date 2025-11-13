@@ -361,14 +361,15 @@ api.post('/auth/manual/verify', async (req, res) => {
 
     const orParts = candidates.map(v => `code.eq.${encodeURIComponent(v)}`).join(',');
 
-    // Ignore expiry entirely — only ensure not used and correct email
+    // No expiry check. Only ensure correct email AND code unused.
     const query =
     `/login_codes` +
     `?select=code,email,used_at` +
     `&or=(${orParts})` +
     `&email=ilike.${encodeURIComponent(email)}` +
-    `&or=(used_at.is.null,used_at.eq.)` + // allow unused or empty used_at
+    `&used_at=is.null` +       // <-- key change (remove ",used_at.eq.")
     `&limit=1`;
+
 
 
     const rows = await supabaseRest(query);
