@@ -555,6 +555,111 @@ api.post('/chat', async (req, res) => {
   }
 });
 
+
+// ──────────────────────────────────────────────────────────
+// Admin aliases (match what admin_*.js calls)
+// ──────────────────────────────────────────────────────────
+
+// return settings (same shape as /project-settings)
+api.get('/admin/settings', async (_req, res) => {
+  try {
+    const rows = await supabaseRest(`/project_settings?select=setting_name,setting_content`);
+    const settings = {};
+    for (const r of rows) settings[r.setting_name] = r.setting_content;
+    res.json({ ok: true, settings });
+  } catch (e) {
+    res.status(500).json({ ok: false, error: e.message });
+  }
+});
+
+// upsert settings (admin_settings.js does PATCH /admin/settings)
+api.patch('/admin/settings', async (req, res) => {
+  try {
+    const payload = req.body || {};
+    const keys = Object.keys(payload);
+    if (!keys.length) return res.status(400).json({ ok: false, error: 'Empty payload' });
+
+    // Upsert by setting_name; return representation
+    const body = keys.map(k => ({ setting_name: k, setting_content: payload[k] }));
+    const up = await supabaseRest(`/project_settings`, {
+      method: 'POST',
+      headers: { Prefer: 'resolution=merge-duplicates,return=representation' },
+      body
+    });
+
+    // Keep in-memory prompt fresh if changed
+    const updated = {};
+    for (const r of up || []) {
+      updated[r.setting_name] = r.setting_content;
+      if (r.setting_name === 'system_prompt') {
+        SYSTEM_PROMPT = String(r.setting_content ?? '').trim();
+      }
+    }
+    res.json({ ok: true, settings: updated });
+  } catch (e) {
+    res.status(500).json({ ok: false, error: e.message });
+  }
+});
+
+// optional: manual refresh button in UI (safe no-op if you don't use it)
+api.post('/admin/reload-system-prompt', async (_req, res) => {
+  try { await fetchSystemPromptFromDB(); res.json({ ok: true }); }
+  catch (e) { res.status(500).json({ ok: false, error: e.message }); }
+});
+
+// example-prompts list (alias of /example-prompts)
+api.get('/admin/example-prompts', async (_req, res) => {
+  try {
+    const rows = await supabaseRest(
+      `/example_prompts?select=id,prompt_title_nl,prompt_title_en,prompt_full_nl,prompt_full_en&order=id.asc`
+    );
+    res.json({ ok: true, items: rows });
+  } catch (e) {
+    res.status(500).json({ ok: false, error: e.message });
+  }
+});
+
+// If your admin UI also creates/updates/deletes prompts, include these:
+api.post('/admin/example-prompts', async (req, res) => {
+  try {
+    const b = req.body || {};
+    const ins = await supabaseRest(`/example_prompts`, {
+      method: 'POST',
+      headers: { Prefer: 'return=representation' },
+      body: [{
+        prompt_title_en: b.prompt_title_en || '',
+        prompt_full_en : b.prompt_full_en  || '',
+        prompt_title_nl: b.prompt_title_nl || '',
+        prompt_full_nl : b.prompt_full_nl  || ''
+      }]
+    });
+    res.json({ ok: true, item: ins?.[0] });
+  } catch (e) { res.status(500).json({ ok: false, error: e.message }); }
+});
+
+api.patch('/admin/example-prompts/:id', async (req, res) => {
+  try {
+    const id = Number(req.params.id);
+    if (!Number.isFinite(id)) return res.status(400).json({ ok: false, error: 'Invalid id' });
+    const upd = await supabaseRest(`/example_prompts?id=eq.${id}`, {
+      method: 'PATCH',
+      headers: { Prefer: 'return=representation' },
+      body: req.body || {}
+    });
+    res.json({ ok: true, item: upd?.[0] });
+  } catch (e) { res.status(500).json({ ok: false, error: e.message }); }
+});
+
+api.delete('/admin/example-prompts/:id', async (req, res) => {
+  try {
+    const id = Number(req.params.id);
+    if (!Number.isFinite(id)) return res.status(400).json({ ok: false, error: 'Invalid id' });
+    await supabaseRest(`/example_prompts?id=eq.${id}`, { method: 'DELETE' });
+    res.json({ ok: true });
+  } catch (e) { res.status(500).json({ ok: false, error: e.message }); }
+});
+
+
 // ──────────────────────────────────────────────────────────
 // Example prompts
 // ──────────────────────────────────────────────────────────
