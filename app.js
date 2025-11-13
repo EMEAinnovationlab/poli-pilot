@@ -7,6 +7,9 @@ const Busboy = require('busboy');
 const XLSX = require('xlsx');
 const { parse: csvParse } = require('csv-parse/sync');
 
+// Node 18+ has global fetch; if you’re on older Node, uncomment:
+// const fetch = (...args) => import('node-fetch').then(({default: f}) => f(...args));
+
 const app = express();
 app.use(cors({ origin: true, credentials: true }));
 app.use(express.json());
@@ -46,10 +49,14 @@ console.log('🔧 REST :', SUPABASE_REST_URL);
 console.log('🔧 FXN  :', SUPABASE_FUNCTIONS_URL);
 
 // ──────────────────────────────────────────────────────────
-// Supabase helpers + prompt loader
-// ──────────────────────────────────────────────────────────
 let SYSTEM_PROMPT = `You are Poli Pilot, a concise assistant. Cite sources inline like [#n].`;
 
+// Basic SSE helper used by /chat
+function sse(res, obj) {
+  res.write(`data: ${JSON.stringify(obj)}\n\n`);
+}
+
+// Supabase REST helper
 async function supabaseRest(path, { method = 'GET', body, headers = {} } = {}) {
   if (!SUPABASE_REST_URL) throw new Error('Missing SUPABASE_REST_URL');
 
@@ -71,11 +78,7 @@ async function supabaseRest(path, { method = 'GET', body, headers = {} } = {}) {
 
   const text = await r.text();
   let json;
-  try {
-    json = text ? JSON.parse(text) : null;
-  } catch {
-    json = text;
-  }
+  try { json = text ? JSON.parse(text) : null; } catch { json = text; }
 
   if (!r.ok) {
     console.error(`[Supabase REST ${method}] ${url} -> ${r.status}`, json);
@@ -84,6 +87,7 @@ async function supabaseRest(path, { method = 'GET', body, headers = {} } = {}) {
   return json;
 }
 
+// System prompt refresher
 async function fetchSystemPromptFromDB() {
   try {
     const rows = await supabaseRest(
@@ -102,7 +106,7 @@ fetchSystemPromptFromDB();
 setInterval(fetchSystemPromptFromDB, 60000);
 
 // ──────────────────────────────────────────────────────────
-// JWT helpers
+// JWT + Cookies
 // ──────────────────────────────────────────────────────────
 function base64url(input) {
   return Buffer.from(input)
@@ -142,9 +146,7 @@ function verifyJwt(token, secret) {
     const payload = JSON.parse(Buffer.from(p, 'base64').toString('utf8'));
     if (payload.exp && Math.floor(Date.now() / 1000) > payload.exp) return null;
     return payload;
-  } catch {
-    return null;
-  }
+  } catch { return null; }
 }
 function parseCookies(req) {
   const h = req.headers.cookie || '';
@@ -182,7 +184,7 @@ function clearCookie(res, name) {
 }
 
 // ──────────────────────────────────────────────────────────
-// Helper for OpenAI embeddings (REST call instead of SDK)
+// OpenAI embeddings (not used in admin auth, kept for ingest)
 // ──────────────────────────────────────────────────────────
 async function createEmbeddingsBatch({ model, inputs, apiKey }) {
   const r = await fetch('https://api.openai.com/v1/embeddings', {
@@ -208,7 +210,9 @@ app.use('/', api);
 // Health check
 api.get('/health', (_, res) => res.json({ ok: true }));
 
-// Auth
+// ──────────────────────────────────────────────────────────
+// Auth: manual verify (one-time codes)
+// ──────────────────────────────────────────────────────────
 api.post('/auth/manual/verify', async (req, res) => {
   try {
     const email = (req.body?.email || '').trim();
@@ -228,9 +232,7 @@ api.post('/auth/manual/verify', async (req, res) => {
       )}&code=eq.${encodeURIComponent(code)}&used_at=is.null&limit=1`
     );
     if (!Array.isArray(codes) || !codes.length)
-      return res
-        .status(401)
-        .json({ ok: false, error: 'Invalid or expired code' });
+      return res.status(401).json({ ok: false, error: 'Invalid code' });
 
     const { id } = codes[0];
     await supabaseRest(`/login_codes?id=eq.${id}`, {
@@ -244,13 +246,64 @@ api.post('/auth/manual/verify', async (req, res) => {
       APP_JWT_SECRET
     );
     setCookie(res, 'pp_session', token);
-    res.json({ ok: true });
+    res.json({ ok: true, user: { email: users[0].email, role: users[0].role || 'member' } });
   } catch (e) {
     res.status(500).json({ ok: false, error: e.message });
   }
 });
 
-// Session check
+// ──────────────────────────────────────────────────────────
+// Auth: admin verify (non-expiring codes in admin_login_codes)
+// ──────────────────────────────────────────────────────────
+api.post('/auth/admin/verify', async (req, res) => {
+  try {
+    const email = (req.body?.email || '').trim();
+    const code  = (req.body?.code  || '').trim();
+    if (!email || !code) {
+      return res.status(400).json({ ok: false, error: 'Missing email or code' });
+    }
+
+    // Ensure user exists
+    const users = await supabaseRest(
+      `/users?select=email,role&email=ilike.${encodeURIComponent(email)}&limit=1`
+    );
+    if (!Array.isArray(users) || users.length === 0) {
+      return res.status(401).json({ ok: false, error: 'Email not enabled' });
+    }
+
+    // Read admin code; schema assumptions:
+    // admin_login_codes(code text PK, enabled bool, email text nullable)
+    const adminRows = await supabaseRest(
+      `/admin_login_codes?select=code,enabled,email&code=eq.${encodeURIComponent(code)}&limit=1`
+    );
+    if (!Array.isArray(adminRows) || adminRows.length === 0) {
+      return res.status(401).json({ ok: false, error: 'Invalid admin code' });
+    }
+
+    const row = adminRows[0];
+    // enabled === false blocks; if null/true treat as enabled
+    if (row.enabled === false) {
+      return res.status(401).json({ ok: false, error: 'Admin code disabled' });
+    }
+    // Optional: bind code to a specific email if table provides email
+    if (row.email && String(row.email).toLowerCase() !== email.toLowerCase()) {
+      return res.status(401).json({ ok: false, error: 'Admin code not valid for this email' });
+    }
+
+    // Admin codes do NOT expire and are NOT one-time → no mutation here
+    const token = signJwt(
+      { sub: users[0].email, role: 'admin' },
+      APP_JWT_SECRET
+    );
+    setCookie(res, 'pp_session', token, { sameSite: 'Lax' });
+
+    return res.json({ ok: true, user: { email: users[0].email, role: 'admin' } });
+  } catch (e) {
+    return res.status(500).json({ ok: false, error: e.message || 'Server error' });
+  }
+});
+
+// Session check / logout
 api.get('/auth/me', (req, res) => {
   const cookies = parseCookies(req);
   const token = cookies.pp_session;
@@ -264,7 +317,7 @@ api.post('/auth/logout', (req, res) => {
 });
 
 // ──────────────────────────────────────────────────────────
-// Site + settings endpoints
+// Site + settings
 // ──────────────────────────────────────────────────────────
 api.get('/project-settings', async (_, res) => {
   try {
@@ -282,18 +335,12 @@ api.get('/project-settings', async (_, res) => {
 api.get('/site-content', async (req, res) => {
   try {
     const page = (req.query.page || '').toLowerCase();
-    const lang = (req.query.lang || 'en').toLowerCase().startsWith('nl')
-      ? 'nl'
-      : 'en';
-    if (!page)
-      return res.status(400).json({ ok: false, error: 'Missing ?page=' });
+    const lang = (req.query.lang || 'en').toLowerCase().startsWith('nl') ? 'nl' : 'en';
+    if (!page) return res.status(400).json({ ok: false, error: 'Missing ?page=' });
     const rows = await supabaseRest(
-      `/site_content?select=page,page_text_en,page_text_nl&limit=1&page=eq.${encodeURIComponent(
-        page
-      )}`
+      `/site_content?select=page,page_text_en,page_text_nl&limit=1&page=eq.${encodeURIComponent(page)}`
     );
-    if (!rows.length)
-      return res.status(404).json({ ok: false, error: 'No page found' });
+    if (!rows.length) return res.status(404).json({ ok: false, error: 'No page found' });
     const row = rows[0];
     const content =
       lang === 'nl'
@@ -338,7 +385,7 @@ api.post('/chat', async (req, res) => {
     res.setHeader('Cache-Control', 'no-cache');
     res.setHeader('Connection', 'keep-alive');
 
-    // RAG query
+    // RAG query → Supabase Function `query-docs`
     const ragBody = {
       query: userMessage,
       match_count: RAG_DEFAULTS.match_count,
@@ -376,10 +423,7 @@ api.post('/chat', async (req, res) => {
     const messages = [
       { role: 'system', content: SYSTEM_PROMPT },
       { role: 'user', content: userMessage },
-      {
-        role: 'system',
-        content: `CONTEXT:\n${contextText || '(no relevant matches found)'}`
-      }
+      { role: 'system', content: `CONTEXT:\n${contextText || '(no relevant matches found)'}` }
     ];
 
     const openaiResp = await fetch('https://api.openai.com/v1/chat/completions', {
