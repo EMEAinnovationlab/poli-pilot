@@ -218,7 +218,6 @@ api.post('/auth/admin/verify', async (req, res) => {
   try {
     const email = (req.body?.email || '').trim();
     const raw   = (req.body?.code  || '').trim();
-
     if (!email || !raw) {
       return res.status(400).json({ ok: false, error: 'Missing email or code' });
     }
@@ -231,15 +230,18 @@ api.post('/auth/admin/verify', async (req, res) => {
       return res.status(401).json({ ok: false, error: 'Email not enabled' });
     }
 
-    // Build code candidates: raw string + numeric (handles leading zeros in numeric column)
-    const candidates = new Set([raw]);
+    // Build candidate values for the code: raw + numeric (handles leading zeros if DB stores numeric)
+    const candidates = [];
+    candidates.push(raw);
     if (/^\d+$/.test(raw)) {
-      candidates.add(String(Number(raw))); // "018072" -> "18072"
+      candidates.push(String(Number(raw))); // "018072" -> "18072"
     }
-    const orConds = Array.from(candidates).map(v => `code.eq.${v}`).join(',');
 
-    // Query ONLY existing columns; no table-qualified names
-    const query = `/admin_login_codes?select=code,email,enabled&or=(${encodeURIComponent(orConds)})&limit=1`;
+    // Construct PostgREST or= filter WITHOUT table-qualifying, and without URL-encoding the parens/commas.
+    // Encode only the values.
+    const orParts = candidates.map(v => `code.eq.${encodeURIComponent(v)}`).join(',');
+    const query = `/admin_login_codes?select=code,email&or=(${orParts})&limit=1`;
+
     const rows = await supabaseRest(query);
 
     if (!Array.isArray(rows) || rows.length === 0) {
@@ -248,12 +250,7 @@ api.post('/auth/admin/verify', async (req, res) => {
 
     const row = rows[0];
 
-    // Treat missing 'enabled' as enabled; if present and false, block
-    if (Object.prototype.hasOwnProperty.call(row, 'enabled') && row.enabled === false) {
-      return res.status(401).json({ ok: false, error: 'Admin code disabled' });
-    }
-
-    // If your table stores an email per code, enforce it
+    // If table stores an email with the code, enforce binding
     if (row.email && String(row.email).toLowerCase() !== email.toLowerCase()) {
       return res.status(401).json({ ok: false, error: 'Admin code not valid for this email' });
     }
