@@ -331,6 +331,74 @@ api.post('/auth/logout', (req, res) => {
   res.json({ ok: true });
 });
 
+
+
+
+// ──────────────────────────────────────────────────────────
+// Auth/manual/verify
+// ──────────────────────────────────────────────────────────
+
+api.post('/auth/manual/verify', async (req, res) => {
+  try {
+    const email = (req.body?.email || '').trim();
+    const raw   = (req.body?.code  || '').trim();
+    if (!email || !raw) {
+      return res.status(400).json({ ok: false, error: 'Missing email or code' });
+    }
+
+    // Ensure the user exists (member or admin)
+    const users = await supabaseRest(
+      `/users?select=email,role&email=ilike.${encodeURIComponent(email)}&limit=1`
+    );
+    if (!Array.isArray(users) || users.length === 0) {
+      return res.status(401).json({ ok: false, error: 'Email not enabled' });
+    }
+
+    // Accept either exact text or numeric string variant (handles leading zeros)
+    const candidates = [];
+    candidates.push(raw);
+    if (/^\d+$/.test(raw)) candidates.push(String(Number(raw)));
+
+    const orParts = candidates.map(v => `code.eq.${encodeURIComponent(v)}`).join(',');
+    // Only unused and not expired
+    const nowIso = new Date().toISOString();
+    const query =
+      `/manual_login_codes` +
+      `?select=code,email,expires_at,used_at` +
+      `&or=(${orParts})` +
+      `&email=ilike.${encodeURIComponent(email)}` +
+      `&or=(used_at.is.null,used_at.eq.)` +      // allow null/empty used_at
+      `&expires_at=gt.${encodeURIComponent(nowIso)}` +
+      `&limit=1`;
+
+    const rows = await supabaseRest(query);
+    if (!Array.isArray(rows) || rows.length === 0) {
+      return res.status(401).json({ ok: false, error: 'Invalid or expired code' });
+    }
+
+    // Mark the code as used (best-effort; ignore if your schema differs)
+    try {
+      await supabaseRest(
+        `/manual_login_codes?code=eq.${encodeURIComponent(rows[0].code)}&email=ilike.${encodeURIComponent(email)}`,
+        { method: 'PATCH', body: { used_at: new Date().toISOString() } }
+      );
+    } catch {}
+
+    // Issue session (role from users table)
+    const role = users[0].role || 'member';
+    const token = signJwt({ sub: users[0].email, role }, APP_JWT_SECRET);
+    setCookie(res, 'pp_session', token, { sameSite: 'Lax' });
+
+    return res.json({ ok: true, user: { email: users[0].email, role } });
+  } catch (e) {
+    console.error('[auth/manual/verify] error:', e);
+    return res.status(500).json({ ok: false, error: e.message || 'Server error' });
+  }
+});
+
+
+
+
 // ──────────────────────────────────────────────────────────
 // Site + settings
 // ──────────────────────────────────────────────────────────
