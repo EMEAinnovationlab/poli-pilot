@@ -1,20 +1,15 @@
 // /public/js/admin_login.js
+// Load as: <script type="module" src="/js/admin_login.js"></script>
 
-// Resolve API base ('' = same-origin; meta tag enables external backend)
-const API_BASE =
-  document.querySelector('meta[name="pp-api-base"]')?.content?.replace(/\/+$/, '') || '';
-
-const api = (path) => `${API_BASE}${path.startsWith('/') ? path : `/${path}`}`;
-
-const form  = document.getElementById("admin-login-form");
+const form  = document.getElementById("admin-login-form"); // required in HTML
 const email = document.getElementById("email");
 const code  = document.getElementById("code");
 const btn   = form?.querySelector('button[type="submit"]');
 
-// Safety: neutralize any stray form action/method to prevent navigation
+// Safety: ensure the form can't navigate away by itself
 if (form) {
-  form.setAttribute('action', '');
-  form.setAttribute('method', 'POST');
+  form.setAttribute("action", "");
+  form.setAttribute("method", "POST");
 }
 
 const msg = document.createElement("p");
@@ -23,19 +18,19 @@ msg.style.fontSize = "14px";
 msg.style.marginTop = "6px";
 form?.appendChild(msg);
 
-const setMsg = (t, err=false) => {
-  msg.textContent = t || "";
-  msg.style.color = err ? "#b10000" : "green";
+const setMsg = (text, isError = false) => {
+  msg.textContent = text || "";
+  msg.style.color = isError ? "#b10000" : "green";
 };
 
-const setBusy = (b) => {
+const setBusy = (busy) => {
   if (!btn) return;
-  btn.disabled = b;
-  btn.style.opacity = b ? "0.6" : "1";
-  btn.style.cursor  = b ? "not-allowed" : "pointer";
+  btn.disabled = busy;
+  btn.style.opacity = busy ? "0.6" : "1";
+  btn.style.cursor  = busy ? "not-allowed" : "pointer";
 };
 
-const validEmail = (v) => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(v || "");
+const validEmail = (v = "") => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(v);
 const validate = () => {
   const e = (email?.value || "").trim();
   const c = (code?.value  || "").trim();
@@ -45,13 +40,13 @@ const validate = () => {
   return true;
 };
 
-// Fast-path: if already admin, go straight to /admin.html
+// If already logged in as admin, go straight to /admin.html
 (async () => {
   if (!form) return;
   const ctrl = new AbortController();
   const to = setTimeout(() => ctrl.abort(), 8000);
   try {
-    const r = await fetch(api('/auth/me'), {
+    const r = await fetch("/auth/me", {
       method: "GET",
       credentials: "include",
       headers: { "Accept": "application/json" },
@@ -62,11 +57,11 @@ const validate = () => {
     if (r.ok && j?.ok && j.user?.role === "admin") {
       window.location.href = "/admin.html";
     }
-  } catch {/* ignore */} finally { clearTimeout(to); }
+  } catch { /* ignore */ } finally { clearTimeout(to); }
 })();
 
+// Handle submit
 let submitting = false;
-
 form?.addEventListener("submit", async (e) => {
   e.preventDefault();
   e.stopPropagation();
@@ -82,9 +77,10 @@ form?.addEventListener("submit", async (e) => {
   const to = setTimeout(() => ctrl.abort(), 12000);
 
   try {
-    const resp = await fetch(api('/auth/admin/verify'), {
+    // Use the SAME endpoint as the user login (this one exists)
+    const resp = await fetch("/auth/manual/verify", {
       method: "POST",
-      credentials: "include", // cookie sessions
+      credentials: "include", // allow Set-Cookie
       headers: { "Content-Type": "application/json", "Accept": "application/json" },
       body: JSON.stringify({
         email: email.value.trim(),
@@ -104,9 +100,18 @@ form?.addEventListener("submit", async (e) => {
       return;
     }
 
+    // Require admin role from the backend response
+    const role = data?.user?.role ?? data?.role ?? null;
+    if (role !== "admin") {
+      setMsg("You are not authorized as admin.", true);
+      setBusy(false);
+      submitting = false;
+      return;
+    }
+
     setMsg("Login successful! Redirecting…");
     setTimeout(() => { window.location.href = "/admin.html"; }, 600);
-  } catch (err) {
+  } catch {
     setMsg("Could not reach server. Please try again.", true);
     setBusy(false);
     submitting = false;
@@ -115,7 +120,7 @@ form?.addEventListener("submit", async (e) => {
   }
 });
 
-// Enter to submit
+// Submit with Enter
 [email, code].forEach((el) =>
   el?.addEventListener("keypress", (ev) => {
     if (ev.key === "Enter") {
