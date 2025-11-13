@@ -827,6 +827,56 @@ api.post('/admin/users/:email/codes', async (req, res) => {
 
 
 
+// ── Aliases to match existing frontend calls ─────────────────────
+
+// 1) users overview: support underscore AND hyphen
+api.get('/admin/users_overview', async (req, res, next) => {
+  req.url = '/admin/users-overview' + (req.url.includes('?') ? '&' : '');
+  next('route'); // fall through to the canonical handler
+});
+
+// If you defined the canonical route already, great. If not:
+api.get('/admin/users-overview', async (_req, res) => {
+  try {
+    const users = await supabaseRest(`/users?select=email,role&order=email.asc`);
+    const codes = await supabaseRest(`/login_codes?select=email,code,created_at&order=created_at.desc`);
+    const latest = new Map();
+    for (const c of codes) {
+      const k = (c.email||'').toLowerCase();
+      if (k && !latest.has(k)) latest.set(k, { code: c.code, created_at: c.created_at });
+    }
+    res.json({
+      ok: true,
+      items: users.map(u => {
+        const k = (u.email||'').toLowerCase();
+        const last = latest.get(k) || {};
+        return { email: u.email, role: u.role || 'member', code: last.code || '', code_created: last.created_at || null };
+      })
+    });
+  } catch (e) { res.status(500).json({ ok:false, error: e.message }); }
+});
+
+// 2) documents list: add a -raw alias
+api.get('/documents/list-raw', async (_req, res) => {
+  try {
+    // Return the raw rows; adjust selected columns if you need more/less
+    const rows = await supabaseRest(
+      `/documents?select=doc_name,uploaded_by,created_at,content&id,doc_name&order=created_at.desc`
+    );
+  } catch {
+    // Fallback: at least mirror /documents/list shape so the UI doesn’t break
+  }
+  try {
+    const rows = await supabaseRest(
+      `/documents?select=doc_name,uploaded_by,created_at&order=created_at.desc`
+    );
+    res.json({ ok: true, items: rows });
+  } catch (e) {
+    res.status(500).json({ ok:false, error: e.message });
+  }
+});
+
+
 
 // ──────────────────────────────────────────────────────────
 // Example prompts
