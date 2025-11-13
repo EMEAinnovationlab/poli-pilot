@@ -363,7 +363,7 @@ api.post('/auth/manual/verify', async (req, res) => {
 
     // Ignore expiry entirely — only ensure not used and correct email
     const query =
-    `/manual_login_codes` +
+    `/login_codes` +
     `?select=code,email,used_at` +
     `&or=(${orParts})` +
     `&email=ilike.${encodeURIComponent(email)}` +
