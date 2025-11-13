@@ -213,44 +213,62 @@ api.get('/health', (_, res) => res.json({ ok: true }));
 // ──────────────────────────────────────────────────────────
 // Auth: manual verify (one-time codes)
 // ──────────────────────────────────────────────────────────
-api.post('/auth/manual/verify', async (req, res) => {
+// Auth: admin verify (non-expiring codes in admin_login_codes)
+api.post('/auth/admin/verify', async (req, res) => {
   try {
     const email = (req.body?.email || '').trim();
-    const code = (req.body?.code || '').trim();
-    if (!email || !code)
+    const raw   = (req.body?.code  || '').trim();
+
+    if (!email || !raw) {
       return res.status(400).json({ ok: false, error: 'Missing email or code' });
+    }
 
+    // Ensure user exists
     const users = await supabaseRest(
-      `/users?select=email,role&email=ilike.${encodeURIComponent(email)}`
+      `/users?select=email,role&email=ilike.${encodeURIComponent(email)}&limit=1`
     );
-    if (!Array.isArray(users) || !users.length)
+    if (!Array.isArray(users) || users.length === 0) {
       return res.status(401).json({ ok: false, error: 'Email not enabled' });
+    }
 
-    const codes = await supabaseRest(
-      `/login_codes?select=id,email&email=ilike.${encodeURIComponent(
-        email
-      )}&code=eq.${encodeURIComponent(code)}&used_at=is.null&limit=1`
-    );
-    if (!Array.isArray(codes) || !codes.length)
-      return res.status(401).json({ ok: false, error: 'Invalid code' });
+    // Build code candidates: raw string + numeric (handles leading zeros in numeric column)
+    const candidates = new Set([raw]);
+    if (/^\d+$/.test(raw)) {
+      candidates.add(String(Number(raw))); // "018072" -> "18072"
+    }
+    const orConds = Array.from(candidates).map(v => `code.eq.${v}`).join(',');
 
-    const { id } = codes[0];
-    await supabaseRest(`/login_codes?id=eq.${id}`, {
-      method: 'PATCH',
-      body: { used_at: new Date().toISOString() },
-      headers: { Prefer: 'return=representation' }
-    });
+    // Query ONLY existing columns; no table-qualified names
+    const query = `/admin_login_codes?select=code,email,enabled&or=(${encodeURIComponent(orConds)})&limit=1`;
+    const rows = await supabaseRest(query);
 
-    const token = signJwt(
-      { sub: users[0].email, role: users[0].role || 'member' },
-      APP_JWT_SECRET
-    );
-    setCookie(res, 'pp_session', token);
-    res.json({ ok: true, user: { email: users[0].email, role: users[0].role || 'member' } });
+    if (!Array.isArray(rows) || rows.length === 0) {
+      return res.status(401).json({ ok: false, error: 'Invalid admin code' });
+    }
+
+    const row = rows[0];
+
+    // Treat missing 'enabled' as enabled; if present and false, block
+    if (Object.prototype.hasOwnProperty.call(row, 'enabled') && row.enabled === false) {
+      return res.status(401).json({ ok: false, error: 'Admin code disabled' });
+    }
+
+    // If your table stores an email per code, enforce it
+    if (row.email && String(row.email).toLowerCase() !== email.toLowerCase()) {
+      return res.status(401).json({ ok: false, error: 'Admin code not valid for this email' });
+    }
+
+    // Issue admin session (codes are not one-time)
+    const token = signJwt({ sub: users[0].email, role: 'admin' }, APP_JWT_SECRET);
+    setCookie(res, 'pp_session', token, { sameSite: 'Lax' });
+
+    return res.json({ ok: true, user: { email: users[0].email, role: 'admin' } });
   } catch (e) {
-    res.status(500).json({ ok: false, error: e.message });
+    console.error('[auth/admin/verify] error:', e);
+    return res.status(500).json({ ok: false, error: e.message || 'Server error' });
   }
 });
+
 
 // ──────────────────────────────────────────────────────────
 // Auth: admin verify (non-expiring codes in admin_login_codes)
