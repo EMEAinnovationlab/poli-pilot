@@ -667,15 +667,21 @@ api.delete('/admin/example-prompts/:id', async (req, res) => {
 api.get('/admin/data/list', async (_req, res) => {
   try {
     const rows = await supabaseRest(
-      `/documents?select=doc_name,uploaded_by,created_at&order=created_at.desc`
+      `/documents?select=doc_name,uploaded_by,created_at:date_uploaded&order=date_uploaded.desc`
     );
-    res.json({ ok: true, items: rows.map(r => ({
-      doc_name: r.doc_name, uploaded_by: r.uploaded_by || '', created_at: r.created_at
-    })) });
+    res.json({
+      ok: true,
+      items: rows.map(r => ({
+        doc_name: r.doc_name,
+        uploaded_by: r.uploaded_by || '',
+        created_at: r.created_at || null
+      }))
+    });
   } catch (e) {
     res.status(500).json({ ok: false, error: e.message });
   }
 });
+
 
 // DELETE /admin/data/:doc_name  → remove all rows with this doc_name
 api.delete('/admin/data/:doc_name', async (req, res) => {
@@ -861,14 +867,14 @@ api.get('/documents/list-raw', async (_req, res) => {
   try {
     // Return the raw rows; adjust selected columns if you need more/less
     const rows = await supabaseRest(
-      `/documents?select=doc_name,uploaded_by,created_at,content&id,doc_name&order=created_at.desc`
+      `/documents?select=doc_name,uploaded_by,date_uploaded,content&id,doc_name&order=date_uploaded.desc`
     );
   } catch {
     // Fallback: at least mirror /documents/list shape so the UI doesn’t break
   }
   try {
     const rows = await supabaseRest(
-      `/documents?select=doc_name,uploaded_by,created_at&order=created_at.desc`
+      `/documents?select=doc_name,uploaded_by,date_uploaded&order=date_uploaded.desc`
     );
     res.json({ ok: true, items: rows });
   } catch (e) {
