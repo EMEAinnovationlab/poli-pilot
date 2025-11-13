@@ -5,6 +5,10 @@
     { "src": "^/(chat|project-settings|site-content|example-prompts)$", "dest": "/api/index.js" },
 
     { "src": "^/api/(auth|admin|documents)(?:/.*)?$", "dest": "/api/index.js" },
-    { "src": "^/api/(chat|project-settings|site-content|example-prompts)$", "dest": "/api/index.js" }
+    { "src": "^/api/(chat|project-settings|site-content|example-prompts)$", "dest": "/api/index.js" },
+    
+    { "src": "^/(js|css|images)/(.*)$", "dest": "/public/$1/$2" }
+
   ]
 }
+
