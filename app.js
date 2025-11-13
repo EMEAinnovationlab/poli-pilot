@@ -659,6 +659,174 @@ api.delete('/admin/example-prompts/:id', async (req, res) => {
   } catch (e) { res.status(500).json({ ok: false, error: e.message }); }
 });
 
+// ──────────────────────────────────────────────────────────
+// Admin: DATA (upload/list/delete)
+// ──────────────────────────────────────────────────────────
+
+// GET /admin/data/list  → alias of /documents/list but under /admin
+api.get('/admin/data/list', async (_req, res) => {
+  try {
+    const rows = await supabaseRest(
+      `/documents?select=doc_name,uploaded_by,created_at&order=created_at.desc`
+    );
+    res.json({ ok: true, items: rows.map(r => ({
+      doc_name: r.doc_name, uploaded_by: r.uploaded_by || '', created_at: r.created_at
+    })) });
+  } catch (e) {
+    res.status(500).json({ ok: false, error: e.message });
+  }
+});
+
+// DELETE /admin/data/:doc_name  → remove all rows with this doc_name
+api.delete('/admin/data/:doc_name', async (req, res) => {
+  try {
+    const name = String(req.params.doc_name || '').trim();
+    if (!name) return res.status(400).json({ ok: false, error: 'Missing doc_name' });
+    await supabaseRest(`/documents?doc_name=eq.${encodeURIComponent(name)}`, { method: 'DELETE' });
+    res.json({ ok: true });
+  } catch (e) {
+    res.status(500).json({ ok: false, error: e.message });
+  }
+});
+
+// POST /admin/data/upload  (multipart: file)
+// Accepts .csv or .xlsx, creates rows in `documents`:
+//   { doc_name, content, uploaded_by }
+// NOTE: adjust column names if your schema differs.
+api.post('/admin/data/upload', (req, res) => {
+  try {
+    const bb = Busboy({ headers: req.headers, limits: { files: 1, fileSize: 25 * 1024 * 1024 } });
+    let fileBuf = Buffer.alloc(0), filename = '';
+    bb.on('file', (_name, file, info) => {
+      filename = info.filename || 'upload';
+      file.on('data', d => { fileBuf = Buffer.concat([fileBuf, d]); });
+    });
+    bb.on('finish', async () => {
+      try {
+        const ext = filename.toLowerCase().endsWith('.xlsx') ? 'xlsx'
+                 : filename.toLowerCase().endsWith('.csv')  ? 'csv'  : 'csv';
+        const records = [];
+
+        if (ext === 'xlsx') {
+          const wb = XLSX.read(fileBuf, { type: 'buffer' });
+          const sheet = wb.SheetNames[0];
+          const rows = XLSX.utils.sheet_to_json(wb.Sheets[sheet], { raw: false });
+          for (const r of rows) records.push(r);
+        } else {
+          const text = fileBuf.toString('utf8');
+          const rows = csvParse(text, { columns: true, skip_empty_lines: true });
+          for (const r of rows) records.push(r);
+        }
+
+        const docName = filename;
+        const payload = records.map(r => ({
+          doc_name: docName,
+          content: JSON.stringify(r),
+          uploaded_by: 'admin'
+        }));
+
+        if (payload.length === 0) return res.json({ ok: true, inserted: 0 });
+
+        await supabaseRest(`/documents`, {
+          method: 'POST',
+          headers: { Prefer: 'return=minimal' },
+          body: payload
+        });
+
+        res.json({ ok: true, inserted: payload.length, doc_name: docName });
+      } catch (e) {
+        res.status(500).json({ ok: false, error: e.message });
+      }
+    });
+    req.pipe(bb);
+  } catch (e) {
+    res.status(500).json({ ok: false, error: e.message });
+  }
+});
+
+// ──────────────────────────────────────────────────────────
+// Admin: USERS (overview/add/delete/create code)
+// ──────────────────────────────────────────────────────────
+
+// GET /admin/users-overview → [{email, role, code, code_created}]
+api.get('/admin/users-overview', async (_req, res) => {
+  try {
+    const users = await supabaseRest(`/users?select=email,role&order=email.asc`);
+    const codes = await supabaseRest(
+      `/login_codes?select=email,code,created_at&order=created_at.desc`
+    );
+    const latestByEmail = new Map();
+    for (const c of codes) {
+      const key = (c.email || '').toLowerCase();
+      if (!key || latestByEmail.has(key)) continue;
+      latestByEmail.set(key, { code: c.code, created_at: c.created_at });
+    }
+    const rows = users.map(u => {
+      const k = (u.email || '').toLowerCase();
+      const last = latestByEmail.get(k) || {};
+      return { email: u.email, role: u.role || 'member', code: last.code || '', code_created: last.created_at || null };
+    });
+    res.json({ ok: true, items: rows });
+  } catch (e) {
+    res.status(500).json({ ok: false, error: e.message });
+  }
+});
+
+// POST /admin/users  { email, role }
+// Upsert user
+api.post('/admin/users', async (req, res) => {
+  try {
+    const email = String(req.body?.email || '').trim();
+    const role  = String(req.body?.role  || 'member').trim();
+    if (!email) return res.status(400).json({ ok: false, error: 'Missing email' });
+
+    const up = await supabaseRest(`/users`, {
+      method: 'POST',
+      headers: { Prefer: 'resolution=merge-duplicates,return=representation' },
+      body: [{ email, role }]
+    });
+    res.json({ ok: true, user: up?.[0] || { email, role } });
+  } catch (e) {
+    res.status(500).json({ ok: false, error: e.message });
+  }
+});
+
+// DELETE /admin/users/:email
+api.delete('/admin/users/:email', async (req, res) => {
+  try {
+    const email = decodeURIComponent(req.params.email || '').trim();
+    if (!email) return res.status(400).json({ ok: false, error: 'Missing email' });
+    await supabaseRest(`/users?email=eq.${encodeURIComponent(email)}`, { method: 'DELETE' });
+    res.json({ ok: true });
+  } catch (e) {
+    res.status(500).json({ ok: false, error: e.message });
+  }
+});
+
+// POST /admin/users/:email/codes  { code? }
+// Create a new one-time code for a user (never-expiring by your rules)
+api.post('/admin/users/:email/codes', async (req, res) => {
+  try {
+    const email = decodeURIComponent(req.params.email || '').trim();
+    if (!email) return res.status(400).json({ ok: false, error: 'Missing email' });
+
+    const code = (req.body?.code && String(req.body.code).trim())
+      || Math.floor(100000 + Math.random() * 900000).toString();
+
+    const ins = await supabaseRest(`/login_codes`, {
+      method: 'POST',
+      headers: { Prefer: 'return=representation' },
+      body: [{ email, code, created_at: new Date().toISOString() }]
+    });
+
+    res.json({ ok: true, item: ins?.[0] || { email, code } });
+  } catch (e) {
+    res.status(500).json({ ok: false, error: e.message });
+  }
+});
+
+
+
 
 // ──────────────────────────────────────────────────────────
 // Example prompts
