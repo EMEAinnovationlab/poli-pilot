@@ -360,16 +360,16 @@ api.post('/auth/manual/verify', async (req, res) => {
     if (/^\d+$/.test(raw)) candidates.push(String(Number(raw)));
 
     const orParts = candidates.map(v => `code.eq.${encodeURIComponent(v)}`).join(',');
-    // Only unused and not expired
-    const nowIso = new Date().toISOString();
+
+    // Ignore expiry entirely — only ensure not used and correct email
     const query =
-      `/login_codes` +
-      `?select=code,email,expires_at,used_at` +
-      `&or=(${orParts})` +
-      `&email=ilike.${encodeURIComponent(email)}` +
-      `&or=(used_at.is.null,used_at.eq.)` +      // allow null/empty used_at
-      `&expires_at=gt.${encodeURIComponent(nowIso)}` +
-      `&limit=1`;
+    `/manual_login_codes` +
+    `?select=code,email,used_at` +
+    `&or=(${orParts})` +
+    `&email=ilike.${encodeURIComponent(email)}` +
+    `&or=(used_at.is.null,used_at.eq.)` + // allow unused or empty used_at
+    `&limit=1`;
+
 
     const rows = await supabaseRest(query);
     if (!Array.isArray(rows) || rows.length === 0) {
