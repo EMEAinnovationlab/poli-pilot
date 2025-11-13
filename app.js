@@ -363,7 +363,7 @@ api.post('/auth/manual/verify', async (req, res) => {
     // Only unused and not expired
     const nowIso = new Date().toISOString();
     const query =
-      `/manual_login_codes` +
+      `/login_codes` +
       `?select=code,email,expires_at,used_at` +
       `&or=(${orParts})` +
       `&email=ilike.${encodeURIComponent(email)}` +
@@ -379,7 +379,7 @@ api.post('/auth/manual/verify', async (req, res) => {
     // Mark the code as used (best-effort; ignore if your schema differs)
     try {
       await supabaseRest(
-        `/manual_login_codes?code=eq.${encodeURIComponent(rows[0].code)}&email=ilike.${encodeURIComponent(email)}`,
+        `/login_codes?code=eq.${encodeURIComponent(rows[0].code)}&email=ilike.${encodeURIComponent(email)}`,
         { method: 'PATCH', body: { used_at: new Date().toISOString() } }
       );
     } catch {}
