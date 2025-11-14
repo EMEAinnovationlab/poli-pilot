@@ -256,7 +256,7 @@ api.get('/documents/list', async (_req, res) => {
   } catch (e) { res.status(500).json({ ok: false, error: e.message, items: [] }); }
 });
 
-// RAW list for admin_data.js diagnostics
+// RAW list (diagnostics)
 api.get('/documents/list-raw', async (_req, res) => {
   try {
     const rows = await supabaseRest(`/documents?select=doc_name,uploaded_by,date_uploaded,content&order=date_uploaded.desc`);
@@ -265,7 +265,7 @@ api.get('/documents/list-raw', async (_req, res) => {
 });
 
 // ──────────────────────────────────────────────────────────
- // Chat endpoint (SSE stream)
+// Chat endpoint (SSE stream)
 // ──────────────────────────────────────────────────────────
 api.post('/chat', async (req, res) => {
   try {
@@ -276,7 +276,6 @@ api.post('/chat', async (req, res) => {
     res.setHeader('Cache-Control', 'no-cache');
     res.setHeader('Connection', 'keep-alive');
 
-    // RAG query → Supabase Function `query-docs`
     const ragBody = { query: userMessage, match_count: RAG_DEFAULTS.match_count, match_threshold: RAG_DEFAULTS.match_threshold, search_mode: RAG_DEFAULTS.search_mode };
     const ragResp = await fetch(`${SUPABASE_FUNCTIONS_URL}/query-docs`, {
       method: 'POST',
@@ -339,7 +338,7 @@ api.post('/chat', async (req, res) => {
 });
 
 // ──────────────────────────────────────────────────────────
-// Admin: settings & example prompts aliases
+// Admin: settings & example prompts
 // ──────────────────────────────────────────────────────────
 api.get('/admin/settings', async (_req, res) => {
   try {
@@ -412,6 +411,11 @@ api.delete('/admin/example-prompts/:id', async (req, res) => {
 // ──────────────────────────────────────────────────────────
 // Admin: DATA (upload/list/delete)
 // ──────────────────────────────────────────────────────────
+
+// CORS preflight helpers to avoid 405 on Vercel
+api.options('/admin/data/upload', (_req, res) => res.status(204).end());
+api.options('/admin/ingest', (_req, res) => res.status(204).end());
+
 api.get('/admin/data/list', async (_req, res) => {
   try {
     const rows = await supabaseRest(`/documents?select=doc_name,uploaded_by,created_at:date_uploaded&order=date_uploaded.desc`);
@@ -428,14 +432,23 @@ api.delete('/admin/data/:doc_name', async (req, res) => {
   } catch (e) { res.status(500).json({ ok: false, error: e.message }); }
 });
 
-api.post('/admin/data/upload', (req, res) => {
+// Core upload worker used by both /admin/data/upload and /admin/ingest
+function handleSpreadsheetUpload(req, res) {
   try {
     const bb = Busboy({ headers: req.headers, limits: { files: 1, fileSize: 25 * 1024 * 1024 } });
     let fileBuf = Buffer.alloc(0), filename = '';
-    bb.on('file', (_name, file, info) => { filename = info.filename || 'upload'; file.on('data', d => { fileBuf = Buffer.concat([fileBuf, d]); }); });
+    const fields = {};
+    bb.on('file', (_name, file, info) => {
+      filename = info.filename || 'upload';
+      file.on('data', d => { fileBuf = Buffer.concat([fileBuf, d]); });
+    });
+    bb.on('field', (name, val) => { fields[name] = val; });
     bb.on('finish', async () => {
       try {
-        const ext = filename.toLowerCase().endsWith('.xlsx') ? 'xlsx' : filename.toLowerCase().endsWith('.csv') ? 'csv' : 'csv';
+        const isXlsx = filename.toLowerCase().endsWith('.xlsx');
+        const isCsv  = filename.toLowerCase().endsWith('.csv');
+        const ext = isXlsx ? 'xlsx' : (isCsv ? 'csv' : 'csv');
+
         const records = [];
         if (ext === 'xlsx') {
           const wb = XLSX.read(fileBuf, { type: 'buffer' });
@@ -447,34 +460,53 @@ api.post('/admin/data/upload', (req, res) => {
           const rows = csvParse(text, { columns: true, skip_empty_lines: true });
           for (const r of rows) records.push(r);
         }
-        const docName = filename;
-        const payload = records.map(r => ({ doc_name: docName, content: JSON.stringify(r), uploaded_by: 'admin' }));
-        if (payload.length === 0) return res.json({ ok: true, inserted: 0 });
+
+        // Allow admin form fields to override defaults
+        const docName = (fields.doc_name || '').trim() || filename;
+        const uploadedBy = (fields.uploaded_by || '').trim() || 'admin';
+
+        if ((fields.action || '').toLowerCase() === 'preview') {
+          return res.json({ ok: true, mode: 'preview', rows: records.slice(0, 50), doc_name: docName, total_rows: records.length });
+        }
+
+        const payload = records.map(r => ({
+          doc_name: docName,
+          content: JSON.stringify(r),
+          uploaded_by: uploadedBy
+        }));
+
+        if (payload.length === 0) return res.json({ ok: true, inserted: 0, doc_name: docName });
+
         await supabaseRest(`/documents`, { method: 'POST', headers: { Prefer: 'return=minimal' }, body: payload });
         res.json({ ok: true, inserted: payload.length, doc_name: docName });
-      } catch (e) { res.status(500).json({ ok: false, error: e.message }); }
+      } catch (e) {
+        res.status(500).json({ ok: false, error: e.message || String(e) });
+      }
     });
     req.pipe(bb);
-  } catch (e) { res.status(500).json({ ok: false, error: e.message }); }
-});
+  } catch (e) {
+    res.status(500).json({ ok: false, error: e.message || String(e) });
+  }
+}
+
+// Original upload endpoint
+api.post('/admin/data/upload', handleSpreadsheetUpload);
+
+// Alias used by some admin pages (fixes 405 + JSON parse error)
+api.post('/admin/ingest', handleSpreadsheetUpload);
 
 // ──────────────────────────────────────────────────────────
-// Admin: USERS (overview/add/delete/create code)
+/** Admin: USERS (overview/add/delete/create code) */
 // ──────────────────────────────────────────────────────────
 async function usersOverviewHandler(_req, res) {
   try {
-    // 1) get users
+    // users
     const users = await supabaseRest(`/users?select=email,role&order=email.asc`);
 
-    // 2) get latest codes per email from BOTH tables
-    const memberCodes = await supabaseRest(
-      `/login_codes?select=email,code,created_at&order=created_at.desc`
-    );
-    const adminCodes = await supabaseRest(
-      `/admin_login_codes?select=email,code,created_at&order=created_at.desc`
-    );
+    // latest codes by email for members and admins
+    const memberCodes = await supabaseRest(`/login_codes?select=email,code,created_at&order=created_at.desc`);
+    const adminCodes  = await supabaseRest(`/admin_login_codes?select=email,code,created_at&order=created_at.desc`);
 
-    // index latest by email for each table
     const latestMember = new Map();
     for (const c of memberCodes) {
       const k = (c.email || '').toLowerCase();
@@ -486,7 +518,6 @@ async function usersOverviewHandler(_req, res) {
       if (k && !latestAdmin.has(k)) latestAdmin.set(k, { code: c.code, created_at: c.created_at });
     }
 
-    // 3) pick the right code source based on role
     const items = users.map(u => {
       const key = (u.email || '').toLowerCase();
       const isAdmin = (u.role || '').toLowerCase() === 'admin';
@@ -504,10 +535,6 @@ async function usersOverviewHandler(_req, res) {
     res.status(500).json({ ok: false, error: e.message || String(e) });
   }
 }
-// keep the regex route that supports both dashes/underscores:
-api.get(/^\/admin\/users[-_]overview$/, usersOverviewHandler);
-
-
 // Support BOTH forms: /admin/users-overview and /admin/users_overview
 api.get(/^\/admin\/users[-_]overview$/, usersOverviewHandler);
 
@@ -535,23 +562,14 @@ api.post('/admin/users/:email/codes', async (req, res) => {
     const email = decodeURIComponent(req.params.email || '').trim();
     if (!email) return res.status(400).json({ ok: false, error: 'Missing email' });
 
-    // find user & role
-    const users = await supabaseRest(
-      `/users?select=email,role&email=ilike.${encodeURIComponent(email)}&limit=1`
-    );
-    if (!Array.isArray(users) || users.length === 0) {
-      return res.status(404).json({ ok: false, error: 'User not found' });
-    }
+    // find user & role to pick the right table
+    const users = await supabaseRest(`/users?select=email,role&email=ilike.${encodeURIComponent(email)}&limit=1`);
+    if (!Array.isArray(users) || users.length === 0) return res.status(404).json({ ok: false, error: 'User not found' });
     const role = (users[0].role || 'member').toLowerCase();
 
-    // generate or take provided code
-    const code = (req.body?.code && String(req.body.code).trim())
-      || Math.floor(100000 + Math.random() * 900000).toString();
-
-    // choose target table
+    const code = (req.body?.code && String(req.body.code).trim()) || Math.floor(100000 + Math.random() * 900000).toString();
     const table = role === 'admin' ? 'admin_login_codes' : 'login_codes';
 
-    // insert
     const ins = await supabaseRest(`/${table}`, {
       method: 'POST',
       headers: { Prefer: 'return=representation' },
