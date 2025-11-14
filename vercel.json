@@ -1,51 +1,19 @@
 {
   "version": 2,
-
-  "functions": {
-    "api/index.js": {
-      "runtime": "nodejs18.x",
-      "maxDuration": 60
-    }
-  },
-
   "routes": [
+    { "src": "^/admin/users(?:/.*)?$", "dest": "/api/index.js" },
+    { "src": "^/api/admin/users(?:/.*)?$", "dest": "/api/index.js" },
 
-    { "src": "^/admin/ingest$",                  "dest": "/api/index.js" },
-    { "src": "^/api/admin/ingest$",              "dest": "/api/index.js" },
-    { "src": "^/admin/data/upload$",             "dest": "/api/index.js" },
+    { "src": "^/admin/users[_-]overview(?:/.*)?$", "dest": "/api/index.js" },
 
-
-    { "src": "^/admin/data/list$",               "dest": "/api/index.js" },
-    { "src": "^/api/admin/data/list$",           "dest": "/api/index.js" },
-    { "src": "^/admin/data/[^/]+$",              "dest": "/api/index.js" },
-    { "src": "^/api/admin/data/[^/]+$",          "dest": "/api/index.js" },
-
-    { "src": "^/admin/users$",                   "dest": "/api/index.js" },
-    { "src": "^/api/admin/users$",               "dest": "/api/index.js" },
-    { "src": "^/admin/users[_-]overview$",       "dest": "/api/index.js" },
-    { "src": "^/api/admin/users[_-]overview$",   "dest": "/api/index.js" },
-    { "src": "^/admin/users/[^/]+$",             "dest": "/api/index.js" },  
-    { "src": "^/api/admin/users/[^/]+$",         "dest": "/api/index.js" },
-    { "src": "^/admin/users/[^/]+/codes$",       "dest": "/api/index.js" },  
-    { "src": "^/api/admin/users/[^/]+/codes$",   "dest": "/api/index.js" },
-
-    { "src": "^/admin/settings$",                "dest": "/api/index.js" },
-    { "src": "^/api/admin/settings$",            "dest": "/api/index.js" },
-    { "src": "^/admin/reload-system-prompt$",    "dest": "/api/index.js" },
-    { "src": "^/api/admin/reload-system-prompt$","dest": "/api/index.js" },
-
-    { "src": "^/admin/example-prompts$",         "dest": "/api/index.js" },
-    { "src": "^/api/admin/example-prompts$",     "dest": "/api/index.js" },
-    { "src": "^/admin/example-prompts/[^/]+$",   "dest": "/api/index.js" },
-    { "src": "^/api/admin/example-prompts/[^/]+$","dest": "/api/index.js" },
-
-    
-    { "src": "^/(auth|documents|chat|project-settings|site-content|example-prompts)(?:/.*)?$",    "dest": "/api/index.js" },
-    { "src": "^/api/(auth|documents|chat|project-settings|site-content|example-prompts)(?:/.*)?$", "dest": "/api/index.js" },
+    { "src": "^/admin/data(?:/.*)?$", "dest": "/api/index.js" },
+    { "src": "^/api/admin/data(?:/.*)?$", "dest": "/api/index.js" },
 
 
-    { "src": "^/admin/debug(?:/.*)?$",           "dest": "/api/index.js" },
+    { "src": "^/admin/settings$", "dest": "/api/index.js" },
+    { "src": "^/admin/example-prompts(?:/.*)?$", "dest": "/api/index.js" },
 
-    { "src": "^/api/.*$",                        "dest": "/api/index.js" }
+    { "src": "^/(auth|documents|chat|project-settings|site-content|example-prompts)(?:/.*)?$", "dest": "/api/index.js" },
+    { "src": "^/api/(auth|documents|chat|project-settings|site-content|example-prompts)(?:/.*)?$", "dest": "/api/index.js" }
   ]
 }
