@@ -6,7 +6,7 @@
     { "src": "^/admin/example-prompts(?:/.*)?$", "dest": "/api/index.js" },
 
 
-    { "src": "^/(auth|documents|chat|project-settings|site-content|example-prompts|users)(?:/.*)?$", "dest": "/api/index.js" },
-    { "src": "^/api/(auth|documents|chat|project-settings|site-content|example-prompts|users)(?:/.*)?$", "dest": "/api/index.js" }
+    { "src": "^/(auth|documents|chat|project-settings|site-content|example-prompts|users-overview)(?:/.*)?$", "dest": "/api/index.js" },
+    { "src": "^/api/(auth|documents|chat|project-settings|site-content|example-prompts|users-overview)(?:/.*)?$", "dest": "/api/index.js" }
   ]
 }
