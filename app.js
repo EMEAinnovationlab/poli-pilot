@@ -755,7 +755,7 @@ api.post('/admin/data/upload', (req, res) => {
 // ──────────────────────────────────────────────────────────
 
 // GET /admin/users-overview → [{email, role, code, code_created}]
-api.get('/users-overview', async (_req, res) => {
+api.get('/admin/users-overview', async (_req, res) => {
   try {
     const users = await supabaseRest(`/users?select=email,role&order=email.asc`);
     const codes = await supabaseRest(
@@ -798,7 +798,7 @@ api.post('/admin/users', async (req, res) => {
 });
 
 // DELETE /admin/users/:email
-api.delete('/users/:email', async (req, res) => {
+api.delete('/admin/users/:email', async (req, res) => {
   try {
     const email = decodeURIComponent(req.params.email || '').trim();
     if (!email) return res.status(400).json({ ok: false, error: 'Missing email' });
@@ -811,7 +811,7 @@ api.delete('/users/:email', async (req, res) => {
 
 // POST /admin/users/:email/codes  { code? }
 // Create a new one-time code for a user (never-expiring by your rules)
-api.post('/users/:email/codes', async (req, res) => {
+api.post('/admin/users/:email/codes', async (req, res) => {
   try {
     const email = decodeURIComponent(req.params.email || '').trim();
     if (!email) return res.status(400).json({ ok: false, error: 'Missing email' });
@@ -836,13 +836,13 @@ api.post('/users/:email/codes', async (req, res) => {
 // ── Aliases to match existing frontend calls ─────────────────────
 
 // 1) users overview: support underscore AND hyphen
-api.get('/users_overview', async (req, res, next) => {
-  req.url = '/users-overview' + (req.url.includes('?') ? '&' : '');
+api.get('/admin/users_overview', async (req, res, next) => {
+  req.url = '/admin/users-overview' + (req.url.includes('?') ? '&' : '');
   next('route'); // fall through to the canonical handler
 });
 
 // If you defined the canonical route already, great. If not:
-api.get('/users-overview', async (_req, res) => {
+api.get('/admin/users-overview', async (_req, res) => {
   try {
     const users = await supabaseRest(`/users?select=email,role&order=email.asc`);
     const codes = await supabaseRest(`/login_codes?select=email,code,created_at&order=created_at.desc`);
