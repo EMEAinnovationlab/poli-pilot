@@ -20,27 +20,54 @@ document.addEventListener('DOMContentLoaded', () => {
     text: (v) => (v ?? '').toString(),
   };
 
-  async function fetchData() {
-    statusEl.textContent = 'Loading…';
-    tableEl.innerHTML = '';
-    summaryEl.textContent = 'Loading…';
+async function fetchData() {
+  statusEl.textContent = 'Loading…';
+  tableEl.innerHTML = '';
+  summaryEl.textContent = 'Loading…';
 
+  // Try both route styles, with and without /api, and dash/underscore
+  const candidates = [
+    '/admin/users_overview',
+    '/admin/users-overview',
+    '/api/admin/users_overview',
+    '/api/admin/users-overview'
+  ];
+
+  let j = null, lastErr = null;
+  for (const url of candidates) {
     try {
-      const r = await fetch('/api/admin/users_overview', { credentials: 'same-origin' });
+      const r = await fetch(url, { credentials: 'same-origin' });
       if (!r.ok) throw new Error(`HTTP ${r.status}`);
-      const j = await r.json();
-      if (!j.ok) throw new Error(j.error || 'Unknown error');
-
-      let rows = j.data || [];
-      if (hideEmpty?.checked) rows = rows.filter(row => row.code && row.code.length > 0);
-
-      renderSummary(j.data || [], rows);
-      renderTable(rows);
-      statusEl.textContent = rows.length ? '' : 'No results.';
+      j = await r.json();
+      if (j && j.ok) break; // got a good one
     } catch (e) {
-      statusEl.textContent = `Failed to load: ${e.message}`;
+      lastErr = e;
     }
   }
+  if (!j || !j.ok) {
+    statusEl.textContent = `Failed to load: ${(j && j.error) || (lastErr && lastErr.message) || 'Unknown error'}`;
+    return;
+  }
+
+  // Backend may return {items: [...] } or {data: [...] }
+  const rawRows = Array.isArray(j.items) ? j.items : Array.isArray(j.data) ? j.data : [];
+
+  // Normalize property names the table expects
+  let rows = rawRows.map(r => ({
+    email: r.email || '',
+    role: r.role || '',
+    code: r.code || '',
+    // accept code_created, code_created_at, or created_at
+    code_created_at: r.code_created_at || r.code_created || r.created_at || null
+  }));
+
+  if (hideEmpty?.checked) rows = rows.filter(row => row.code && row.code.length > 0);
+
+  renderSummary(rawRows, rows);
+  renderTable(rows);
+  statusEl.textContent = rows.length ? '' : 'No results.';
+}
+
 
   function renderSummary(allRows, visibleRows) {
     const total = allRows.length;
