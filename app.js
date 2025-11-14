@@ -463,21 +463,51 @@ api.post('/admin/data/upload', (req, res) => {
 // ──────────────────────────────────────────────────────────
 async function usersOverviewHandler(_req, res) {
   try {
+    // 1) get users
     const users = await supabaseRest(`/users?select=email,role&order=email.asc`);
-    const codes = await supabaseRest(`/login_codes?select=email,code,created_at&order=created_at.desc`);
-    const latest = new Map();
-    for (const c of codes) {
+
+    // 2) get latest codes per email from BOTH tables
+    const memberCodes = await supabaseRest(
+      `/login_codes?select=email,code,created_at&order=created_at.desc`
+    );
+    const adminCodes = await supabaseRest(
+      `/admin_login_codes?select=email,code,created_at&order=created_at.desc`
+    );
+
+    // index latest by email for each table
+    const latestMember = new Map();
+    for (const c of memberCodes) {
       const k = (c.email || '').toLowerCase();
-      if (k && !latest.has(k)) latest.set(k, { code: c.code, created_at: c.created_at });
+      if (k && !latestMember.has(k)) latestMember.set(k, { code: c.code, created_at: c.created_at });
     }
+    const latestAdmin = new Map();
+    for (const c of adminCodes) {
+      const k = (c.email || '').toLowerCase();
+      if (k && !latestAdmin.has(k)) latestAdmin.set(k, { code: c.code, created_at: c.created_at });
+    }
+
+    // 3) pick the right code source based on role
     const items = users.map(u => {
-      const k = (u.email || '').toLowerCase();
-      const last = latest.get(k) || {};
-      return { email: u.email, role: u.role || 'member', code: last.code || '', code_created: last.created_at || null };
+      const key = (u.email || '').toLowerCase();
+      const isAdmin = (u.role || '').toLowerCase() === 'admin';
+      const last = isAdmin ? (latestAdmin.get(key) || {}) : (latestMember.get(key) || {});
+      return {
+        email: u.email,
+        role: u.role || 'member',
+        code: last.code || '',
+        code_created_at: last.created_at || null
+      };
     });
+
     res.json({ ok: true, items });
-  } catch (e) { res.status(500).json({ ok: false, error: e.message }); }
+  } catch (e) {
+    res.status(500).json({ ok: false, error: e.message || String(e) });
+  }
 }
+// keep the regex route that supports both dashes/underscores:
+api.get(/^\/admin\/users[-_]overview$/, usersOverviewHandler);
+
+
 // Support BOTH forms: /admin/users-overview and /admin/users_overview
 api.get(/^\/admin\/users[-_]overview$/, usersOverviewHandler);
 
@@ -504,10 +534,34 @@ api.post('/admin/users/:email/codes', async (req, res) => {
   try {
     const email = decodeURIComponent(req.params.email || '').trim();
     if (!email) return res.status(400).json({ ok: false, error: 'Missing email' });
-    const code = (req.body?.code && String(req.body.code).trim()) || Math.floor(100000 + Math.random() * 900000).toString();
-    const ins = await supabaseRest(`/login_codes`, { method: 'POST', headers: { Prefer: 'return=representation' }, body: [{ email, code, created_at: new Date().toISOString() }] });
-    res.json({ ok: true, item: ins?.[0] || { email, code } });
-  } catch (e) { res.status(500).json({ ok: false, error: e.message }); }
+
+    // find user & role
+    const users = await supabaseRest(
+      `/users?select=email,role&email=ilike.${encodeURIComponent(email)}&limit=1`
+    );
+    if (!Array.isArray(users) || users.length === 0) {
+      return res.status(404).json({ ok: false, error: 'User not found' });
+    }
+    const role = (users[0].role || 'member').toLowerCase();
+
+    // generate or take provided code
+    const code = (req.body?.code && String(req.body.code).trim())
+      || Math.floor(100000 + Math.random() * 900000).toString();
+
+    // choose target table
+    const table = role === 'admin' ? 'admin_login_codes' : 'login_codes';
+
+    // insert
+    const ins = await supabaseRest(`/${table}`, {
+      method: 'POST',
+      headers: { Prefer: 'return=representation' },
+      body: [{ email, code, created_at: new Date().toISOString() }]
+    });
+
+    res.json({ ok: true, item: ins?.[0] || { email, code, table } });
+  } catch (e) {
+    res.status(500).json({ ok: false, error: e.message || String(e) });
+  }
 });
 
 // ──────────────────────────────────────────────────────────
