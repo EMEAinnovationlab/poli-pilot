@@ -1,4 +1,4 @@
-// /public/js/main.js
+const invloedInputs = previewRows.map(r => r.invloed_text || '');// /public/js/main.js
 // ES module with top-level await. Ensure your HTML loads this with:
 // <script type="module" src="/js/main.js"></script>
 
@@ -34,7 +34,7 @@ const parseMarkdown = (md) => (markedRef ? markedRef.parse(md || '') : (md || ''
 const STRAPLINE = {
   enabled: true,
   iconUrl: '/images/brand/chat_icon.png',
-  defaultText: 'POLI PILOT',
+  defaultText: 'POLICY PILOT',
   autoStartText: 'INTRODUCTIE',
   uppercase: true,
   letterSpacing: '0.25em',
