@@ -1,11 +1,10 @@
 {
   "version": 2,
   "routes": [
-    { "src": "^/admin/users[-_]overview$", "dest": "/api/index.js" },
-    { "src": "^/api/admin/users[-_]overview$", "dest": "/api/index.js" },
+    { "src": "^/admin/users(?:/.*)?$", "dest": "/api/index.js" },
+    { "src": "^/api/admin/users(?:/.*)?$", "dest": "/api/index.js" },
 
-    { "src": "^/admin/data(?:/.*)?$", "dest": "/api/index.js" },
-    { "src": "^/api/admin/data(?:/.*)?$", "dest": "/api/index.js" },
+    { "src": "^/admin/users[_-]overview(?:/.*)?$", "dest": "/api/index.js" },
 
     { "src": "^/admin/settings$", "dest": "/api/index.js" },
     { "src": "^/admin/example-prompts(?:/.*)?$", "dest": "/api/index.js" },
