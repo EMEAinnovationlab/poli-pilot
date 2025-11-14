@@ -34,7 +34,7 @@ const parseMarkdown = (md) => (markedRef ? markedRef.parse(md || '') : (md || ''
 const STRAPLINE = {
   enabled: true,
   iconUrl: '/images/brand/chat_icon.png',
-  defaultText: 'POLICY PILOT',
+  defaultText: 'POLI PILOT',
   autoStartText: 'INTRODUCTIE',
   uppercase: true,
   letterSpacing: '0.25em',
