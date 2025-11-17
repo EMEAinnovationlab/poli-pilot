@@ -1,4 +1,3 @@
-const invloedInputs = previewRows.map(r => r.invloed_text || '');// /public/js/main.js
 // ES module with top-level await. Ensure your HTML loads this with:
 // <script type="module" src="/js/main.js"></script>
 
