@@ -8,6 +8,7 @@
 
     { "src": "^/admin/data(?:/.*)?$", "dest": "/api/index.js" },
     { "src": "^/api/admin/data(?:/.*)?$", "dest": "/api/index.js" },
+    { "src": "^/api/admin/data/upload(?:/.*)?$", "dest": "/api/index.js" },
 
 
     { "src": "^/admin/settings$", "dest": "/api/index.js" },
@@ -17,3 +18,5 @@
     { "src": "^/api/(auth|documents|chat|project-settings|site-content|example-prompts)(?:/.*)?$", "dest": "/api/index.js" }
   ]
 }
+
+
