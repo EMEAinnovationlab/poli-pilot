@@ -467,59 +467,110 @@ api.delete('/admin/data/:doc_name', async (req, res) => {
 // Core upload worker used by both /admin/data/upload and /admin/ingest
 function handleSpreadsheetUpload(req, res) {
   try {
-    const bb = Busboy({ headers: req.headers, limits: { files: 1, fileSize: 25 * 1024 * 1024 } });
-    let fileBuf = Buffer.alloc(0), filename = '';
+    const bb = Busboy({
+      headers: req.headers,
+      limits: { files: 1, fileSize: 25 * 1024 * 1024 }
+    });
+
+    let fileBuf = Buffer.alloc(0);
+    let filename = '';
     const fields = {};
+
     bb.on('file', (_name, file, info) => {
       filename = info.filename || 'upload';
-      file.on('data', d => { fileBuf = Buffer.concat([fileBuf, d]); });
+      file.on('data', d => {
+        fileBuf = Buffer.concat([fileBuf, d]);
+      });
     });
-    bb.on('field', (name, val) => { fields[name] = val; });
+
+    bb.on('field', (name, val) => {
+      fields[name] = val;
+    });
+
     bb.on('finish', async () => {
       try {
         const isXlsx = filename.toLowerCase().endsWith('.xlsx');
         const isCsv  = filename.toLowerCase().endsWith('.csv');
-        const ext = isXlsx ? 'xlsx' : (isCsv ? 'csv' : 'csv');
+        const ext    = isXlsx ? 'xlsx' : (isCsv ? 'csv' : 'csv');
 
         const records = [];
         if (ext === 'xlsx') {
-          const wb = XLSX.read(fileBuf, { type: 'buffer' });
+          const wb    = XLSX.read(fileBuf, { type: 'buffer' });
           const sheet = wb.SheetNames[0];
-          const rows = XLSX.utils.sheet_to_json(wb.Sheets[sheet], { raw: false });
+          const rows  = XLSX.utils.sheet_to_json(wb.Sheets[sheet], { raw: false });
           for (const r of rows) records.push(r);
         } else {
-          const text = fileBuf.toString('utf8');
-          const rows = csvParse(text, { columns: true, skip_empty_lines: true });
+          const text  = fileBuf.toString('utf8');
+          const rows  = csvParse(text, { columns: true, skip_empty_lines: true });
           for (const r of rows) records.push(r);
         }
 
-        // Allow admin form fields to override defaults
-        const docName = (fields.doc_name || '').trim() || filename;
+        // from form
+        const docName    = (fields.doc_name || '').trim()    || filename;
         const uploadedBy = (fields.uploaded_by || '').trim() || 'admin';
 
+        // PREVIEW MODE: no DB write
         if ((fields.action || '').toLowerCase() === 'preview') {
-          return res.json({ ok: true, mode: 'preview', rows: records.slice(0, 50), doc_name: docName, total_rows: records.length });
+          return res.json({
+            ok: true,
+            mode: 'preview',
+            rows: records.slice(0, 50),
+            doc_name: docName,
+            total_rows: records.length
+          });
         }
 
-        const payload = records.map(r => ({
-          doc_name: docName,
-          content: JSON.stringify(r),
-          uploaded_by: uploadedBy
+        // UPLOAD MODE
+        if (!records.length) {
+          return res.json({ ok: true, count: 0, doc_name: docName });
+        }
+
+        // One logical document_id for this whole upload
+        const documentId = crypto.randomUUID();
+
+        const payload = records.map((r, idx) => ({
+          // schema fields
+          document_id : documentId,           // NOT NULL
+          doc_name    : docName,
+          uploaded_by : uploadedBy,
+
+          // optional: use row index as chunk_index
+          chunk_index : idx,
+
+          // map known columns if present in CSV/XLSX
+          datum       : r.datum       ?? null,
+          naam        : r.naam        ?? null,
+          bron        : r.bron        ?? null,
+          link        : r.link        ?? null,
+          invloed_text: r.invloed_text ?? null,
+
+          // keep the full original row as JSON for safety
+          content     : r.content ?? JSON.stringify(r)
         }));
 
-        if (payload.length === 0) return res.json({ ok: true, inserted: 0, doc_name: docName });
+        await supabaseRest(`/documents`, {
+          method : 'POST',
+          headers: { Prefer: 'return=minimal' },
+          body   : payload
+        });
 
-        await supabaseRest(`/documents`, { method: 'POST', headers: { Prefer: 'return=minimal' }, body: payload });
-        res.json({ ok: true, inserted: payload.length, doc_name: docName });
+        res.json({
+          ok      : true,
+          count   : payload.length,
+          doc_name: docName,
+          document_id: documentId
+        });
       } catch (e) {
         res.status(500).json({ ok: false, error: e.message || String(e) });
       }
     });
+
     req.pipe(bb);
   } catch (e) {
     res.status(500).json({ ok: false, error: e.message || String(e) });
   }
 }
+
 
 // Original upload endpoint
 api.post('/admin/data/upload', handleSpreadsheetUpload);
