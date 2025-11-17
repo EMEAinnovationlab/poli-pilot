@@ -352,21 +352,53 @@ api.patch('/admin/settings', async (req, res) => {
   try {
     const payload = req.body || {};
     const keys = Object.keys(payload);
-    if (!keys.length) return res.status(400).json({ ok: false, error: 'Empty payload' });
-    const body = keys.map(k => ({ setting_name: k, setting_content: payload[k] }));
-    const up = await supabaseRest(`/project_settings`, {
-      method: 'POST',
-      headers: { Prefer: 'resolution=merge-duplicates,return=representation' },
-      body
-    });
-    const updated = {};
-    for (const r of up || []) {
-      updated[r.setting_name] = r.setting_content;
-      if (r.setting_name === 'system_prompt') SYSTEM_PROMPT = String(r.setting_content ?? '').trim();
+    if (!keys.length) {
+      return res.status(400).json({ ok: false, error: 'Empty payload' });
     }
+
+    const updated = {};
+
+    for (const k of keys) {
+      const value = payload[k];
+
+      // 1) Try UPDATE
+      let rows;
+      try {
+        rows = await supabaseRest(`/project_settings?setting_name=eq.${encodeURIComponent(k)}`, {
+          method : 'PATCH',
+          headers: { Prefer: 'return=representation' },
+          body   : { setting_content: value }
+        });
+      } catch (e) {
+        rows = null;
+      }
+
+      let row = Array.isArray(rows) && rows[0];
+
+      // 2) If nothing updated, INSERT
+      if (!row) {
+        const ins = await supabaseRest(`/project_settings`, {
+          method : 'POST',
+          headers: { Prefer: 'return=representation' },
+          body   : [{ setting_name: k, setting_content: value }]
+        });
+        row = ins?.[0];
+      }
+
+      if (row) {
+        updated[row.setting_name] = row.setting_content;
+        if (row.setting_name === 'system_prompt') {
+          SYSTEM_PROMPT = String(row.setting_content ?? '').trim();
+        }
+      }
+    }
+
     res.json({ ok: true, settings: updated });
-  } catch (e) { res.status(500).json({ ok: false, error: e.message }); }
+  } catch (e) {
+    res.status(500).json({ ok: false, error: e.message || 'Server error' });
+  }
 });
+
 
 api.post('/admin/reload-system-prompt', async (_req, res) => {
   try { await fetchSystemPromptFromDB(); res.json({ ok: true }); }
