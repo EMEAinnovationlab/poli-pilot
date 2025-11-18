@@ -18,7 +18,7 @@ app.use(express.static('public'));
 // Environment
 // ──────────────────────────────────────────────────────────
 const OPENAI_API_KEY = process.env.OPENAI_API_KEY;
-const OPENAI_MODEL = process.env.OPENAI_MODEL || 'gpt-4o-mini';
+const OPENAI_MODEL = process.env.OPENAI_MODEL || 'gpt-5';
 const EMBED_MODEL = process.env.EMBED_MODEL || 'text-embedding-3-small';
 const DRY_RUN_EMBEDDINGS = String(process.env.DRY_RUN_EMBEDDINGS || '') === '1';
 
