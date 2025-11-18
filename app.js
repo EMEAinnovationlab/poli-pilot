@@ -38,7 +38,7 @@ if (!SUPABASE_REST_URL && SUPABASE_FUNCTIONS_URL) {
 const APP_JWT_SECRET = process.env.APP_JWT_SECRET || 'dev_secret_change_me';
 
 const RAG_DEFAULTS = {
-  match_count: Number(process.env.RAG_MATCH_COUNT || 6),
+  match_count: Number(process.env.RAG_MATCH_COUNT || 15),
   match_threshold: Number(process.env.RAG_MATCH_THRESHOLD || 0),
   search_mode: process.env.RAG_SEARCH_MODE || 'both',
   uploaded_by: process.env.RAG_UPLOADED_BY || null
@@ -264,46 +264,159 @@ api.get('/documents/list-raw', async (_req, res) => {
   } catch (e) { res.status(500).json({ ok: false, error: e.message }); }
 });
 
+
 // ──────────────────────────────────────────────────────────
-// Chat endpoint (SSE stream)
+// Chat endpoint (SSE stream) — improved RAG wiring
 // ──────────────────────────────────────────────────────────
 api.post('/chat', async (req, res) => {
   try {
     const userMessage = (req.body?.message || '').toString().slice(0, 8000);
-    if (!userMessage) return res.status(400).json({ ok: false, error: 'Empty message' });
+    if (!userMessage) {
+      return res.status(400).json({ ok: false, error: 'Empty message' });
+    }
 
     res.setHeader('Content-Type', 'text/event-stream');
     res.setHeader('Cache-Control', 'no-cache');
     res.setHeader('Connection', 'keep-alive');
 
-    const ragBody = { query: userMessage, match_count: RAG_DEFAULTS.match_count, match_threshold: RAG_DEFAULTS.match_threshold, search_mode: RAG_DEFAULTS.search_mode };
-    const ragResp = await fetch(`${SUPABASE_FUNCTIONS_URL}/query-docs`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', apikey: SUPABASE_API_KEY, Authorization: `Bearer ${SUPABASE_BEARER}` },
-      body: JSON.stringify(ragBody)
-    });
-    const ragJson = await ragResp.json();
-    const matches = ragJson?.matches || [];
+    // Small helper to call the Edge Function with an optional uploaded_by filter
+    async function callRag(uploadedByLabel) {
+      const body = {
+        query         : userMessage,
+        match_count   : RAG_DEFAULTS.match_count,
+        match_threshold: RAG_DEFAULTS.match_threshold,
+        search_mode   : RAG_DEFAULTS.search_mode
+      };
+      if (uploadedByLabel) body.uploaded_by = uploadedByLabel;
 
-    const snippets = [], sources = [];
-    let used = 0, maxChars = 6000;
-    for (const [i, m] of matches.entries()) {
-      const title = m.doc_name || m.bron || `Bron #${i + 1}`;
-      const snippet = (m.invloed_text || m.content || '').toString().trim();
-      const block = `[#${i + 1}] ${title}\n${snippet}\n---\n`;
-      if (used + block.length <= maxChars) { snippets.push(block); used += block.length; sources.push({ n: i + 1, title }); }
+      const resp = await fetch(`${SUPABASE_FUNCTIONS_URL}/query-docs`, {
+        method : 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          ...(SUPABASE_API_KEY ? { apikey: SUPABASE_API_KEY } : {}),
+          ...(SUPABASE_BEARER ? { Authorization: `Bearer ${SUPABASE_BEARER}` } : {})
+        },
+        body   : JSON.stringify(body)
+      });
+      
+
+      if (!resp.ok) {
+        const txt = await resp.text().catch(() => '');
+        console.error('[query-docs] error:', resp.status, txt);
+        return { matches: [], error: `query-docs error: ${resp.status}` };
+      }
+
+      let json;
+      try {
+        json = await resp.json();
+      } catch (e) {
+        console.error('[query-docs] invalid JSON:', e);
+        return { matches: [], error: 'query-docs JSON parse error' };
+      }
+
+      return { matches: json?.matches || [], error: null };
     }
+
+
+
+    // 1️⃣ Two pulls: Public Matters (🔴) & Edelman (🔵)
+    const [pm, ed] = await Promise.all([
+      callRag('Public Matters'),
+      callRag('Edelman')
+    ]);
+
+    const allMatches = [
+      ...(pm.matches || []).map(m => ({ ...m, uploaded_by: m.uploaded_by || 'Public Matters' })),
+      ...(ed.matches || []).map(m => ({ ...m, uploaded_by: m.uploaded_by || 'Edelman' }))
+    ];
+
+    // ✅ logging using the new structure
+    console.log('RAG matches total:', allMatches.length, {
+    pm: { error: pm.error, count: (pm.matches || []).length },
+    ed: { error: ed.error, count: (ed.matches || []).length }
+    });
+
+    // If the function is down / misconfigured, surface that visibly
+    if ((pm.error && !pm.matches.length) && (ed.error && !ed.matches.length)) {
+      sse(res, { type: 'error', message: 'RAG backend (query-docs) is not responding or misconfigured.' });
+    }
+
+    const snippets = [];
+    const sources  = [];
+    let used = 0;
+    const maxChars = 6000;
+
+    // Build nice, tagged context blocks
+    for (const [i, m] of allMatches.entries()) {
+      const src  = (m.uploaded_by || '').toString().trim();
+      const tag  = src.toLowerCase().includes('edelman') ? '🔵 Edelman' : '🔴 Public Matters';
+      const baseTitle = m.doc_name || m.naam || m.bron || `Bron #${i + 1}`;
+      const title = `${tag} – ${baseTitle}`;
+
+      const snippetText = (
+        m.invloed_text ||
+        m.summary ||
+        m.excerpt ||
+        (typeof m.content === 'string' ? m.content : JSON.stringify(m.content || ''))
+      ).toString().trim();
+
+      if (!snippetText) continue;
+
+      const block = `[#${i + 1}] ${title}\n${snippetText}\n---\n`;
+      if (used + block.length > maxChars) break;
+
+      snippets.push(block);
+      used += block.length;
+
+      sources.push({
+        n    : i + 1,
+        title,
+        url  : m.url || null,
+        uploaded_by: src
+      });
+    }
+
+    const totalHits    = allMatches.length;
+    const hitsPm       = (pm.matches || []).length;
+    const hitsEd       = (ed.matches || []).length;
+    const contextBody  = snippets.join('') || '(no relevant matches found)';
 
     const messages = [
       { role: 'system', content: SYSTEM_PROMPT },
-      { role: 'user', content: userMessage },
-      { role: 'system', content: `CONTEXT:\n${snippets.join('') || '(no relevant matches found)'}` }
+      {
+        role   : 'system',
+        content: `
+You have access to a vector database with documents from:
+- 🔴 Public Matters (policy, parties, issue papers)
+- 🔵 Edelman (Edelman Trust Barometer reports)
+
+RAG STATS:
+- Total matches: ${totalHits}
+- Public Matters matches: ${hitsPm}
+- Edelman matches: ${hitsEd}
+
+Use the CONTEXT below as your primary source of truth. If there are no relevant matches, you MUST explicitly say so.
+
+CONTEXT DOCUMENT EXCERPTS:
+${contextBody}
+        `.trim()
+      },
+      { role: 'user', content: userMessage }
     ];
 
+    // 2️⃣ Call OpenAI with streaming
     const openaiResp = await fetch('https://api.openai.com/v1/chat/completions', {
-      method: 'POST',
-      headers: { Authorization: `Bearer ${OPENAI_API_KEY}`, 'Content-Type': 'application/json' },
-      body: JSON.stringify({ model: OPENAI_MODEL, stream: true, temperature: 0.2, messages })
+      method : 'POST',
+      headers: {
+        Authorization: `Bearer ${OPENAI_API_KEY}`,
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({
+        model      : OPENAI_MODEL,
+        stream     : true,
+        temperature: 0.2,
+        messages
+      })
     });
 
     if (!openaiResp.ok || !openaiResp.body) {
@@ -313,28 +426,43 @@ api.post('/chat', async (req, res) => {
       return res.end();
     }
 
-    const reader = openaiResp.body.getReader();
+    const reader  = openaiResp.body.getReader();
     const decoder = new TextDecoder();
-    let buffer = '';
+    let buffer    = '';
+
     while (true) {
       const { done, value } = await reader.read();
       if (done) break;
       buffer += decoder.decode(value, { stream: true });
+
       const lines = buffer.split('\n');
       buffer = lines.pop() || '';
+
       for (const line of lines) {
         const t = line.trim();
         if (!t.startsWith('data:')) continue;
         const payload = t.slice(5).trim();
-        if (payload === '[DONE]') { sse(res, { type: 'sources', items: sources }); sse(res, { type: 'done' }); return res.end(); }
+        if (payload === '[DONE]') {
+          // send sources at the end so your frontend can render them
+          sse(res, { type: 'sources', items: sources });
+          sse(res, { type: 'done' });
+          return res.end();
+        }
         try {
           const json = JSON.parse(payload);
           const delta = json.choices?.[0]?.delta?.content;
           if (delta) sse(res, { type: 'token', text: delta });
-        } catch {}
+        } catch {
+          // ignore malformed chunks
+        }
       }
     }
-  } catch (e) { sse(res, { type: 'error', message: e.message }); sse(res, { type: 'done' }); res.end(); }
+  } catch (e) {
+    console.error('/chat error:', e);
+    sse(res, { type: 'error', message: e.message || 'Server error in /chat' });
+    sse(res, { type: 'done' });
+    res.end();
+  }
 });
 
 // ──────────────────────────────────────────────────────────
