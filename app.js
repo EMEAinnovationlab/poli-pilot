@@ -330,9 +330,34 @@ const allMatches = [
   ...(ed.matches || []).map(m => ({ ...m, uploaded_by: m.uploaded_by || 'Edelman' }))
 ];
 
-console.log('RAG matches total:', allMatches.length, {
-  pm: { error: pm.error, count: (pm.matches || []).length },
-  ed: { error: ed.error, count: (ed.matches || []).length }
+// Full debug logging of ALL RAG matches with full snippet text
+console.log('────────────────────────────────────────────');
+console.log('RAG DEBUG: total matches:', allMatches.length);
+console.log('PM matches:', (pm.matches || []).length, ' | ED matches:', (ed.matches || []).length);
+console.log('────────────────────────────────────────────');
+
+allMatches.forEach((m, i) => {
+  const baseTitle =
+    m.doc_name ||
+    m.naam ||
+    m.bron ||
+    `Bron #${i + 1}`;
+
+  // Extract the text used for snippets EXACTLY as in your snippet builder
+  const snippetText = (
+    m.invloed_text ||
+    m.summary ||
+    m.excerpt ||
+    (typeof m.content === 'string'
+      ? m.content
+      : JSON.stringify(m.content || ''))
+  ).toString().trim();
+
+  console.log(`[#${i + 1}] uploaded_by=${m.uploaded_by}`);
+  console.log(`Title: ${baseTitle}`);
+  console.log('Full snippet:');
+  console.log(snippetText || '(empty)');
+  console.log('────────────────────────────────────────────');
 });
 
 // 👇 Extra debug: show first few matches with titles + snippet preview
