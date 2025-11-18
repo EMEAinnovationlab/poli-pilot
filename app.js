@@ -325,16 +325,33 @@ api.post('/chat', async (req, res) => {
       callRag('Edelman')
     ]);
 
-    const allMatches = [
-      ...(pm.matches || []).map(m => ({ ...m, uploaded_by: m.uploaded_by || 'Public Matters' })),
-      ...(ed.matches || []).map(m => ({ ...m, uploaded_by: m.uploaded_by || 'Edelman' }))
-    ];
+const allMatches = [
+  ...(pm.matches || []).map(m => ({ ...m, uploaded_by: m.uploaded_by || 'Public Matters' })),
+  ...(ed.matches || []).map(m => ({ ...m, uploaded_by: m.uploaded_by || 'Edelman' }))
+];
 
-    // ✅ logging using the new structure
-    console.log('RAG matches total:', allMatches.length, {
-    pm: { error: pm.error, count: (pm.matches || []).length },
-    ed: { error: ed.error, count: (ed.matches || []).length }
-    });
+console.log('RAG matches total:', allMatches.length, {
+  pm: { error: pm.error, count: (pm.matches || []).length },
+  ed: { error: ed.error, count: (ed.matches || []).length }
+});
+
+// 👇 Extra debug: show first few matches with titles + snippet preview
+for (const [i, m] of allMatches.slice(0, 5).entries()) {
+  const baseTitle = m.doc_name || m.naam || m.bron || `Bron #${i + 1}`;
+  const snippetText = (
+    m.invloed_text ||
+    m.summary ||
+    m.excerpt ||
+    (typeof m.content === 'string' ? m.content : JSON.stringify(m.content || ''))
+  ).toString().trim();
+
+  console.log(
+    `[#${i + 1}] uploaded_by=${m.uploaded_by} title="${baseTitle}"`,
+    'snippetPreview=',
+    snippetText.slice(0, 200).replace(/\s+/g, ' ')
+  );
+}
+
 
     // If the function is down / misconfigured, surface that visibly
     if ((pm.error && !pm.matches.length) && (ed.error && !ed.matches.length)) {
