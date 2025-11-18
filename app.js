@@ -164,7 +164,7 @@ User query:
       },
       body: JSON.stringify({
         model: OPENAI_MODEL,
-        temperature: 0.1,
+        // temperature: 0.1,
         messages: [
           { role: 'system', content: 'You expand search queries with synonyms and related terms. Output plain text only, no bullet points.' },
           { role: 'user', content: prompt }
