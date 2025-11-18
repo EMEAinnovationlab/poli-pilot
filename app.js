@@ -137,6 +137,60 @@ async function createEmbeddingsBatch({ model, inputs, apiKey }) {
 }
 
 // ──────────────────────────────────────────────────────────
+// Query expansion: generate synonyms / related terms
+// ──────────────────────────────────────────────────────────
+async function expandQueryWithSynonyms(userMessage) {
+  try {
+    const prompt = `
+You will be given a user query.
+
+1. Extract the 3–8 most important keywords and concepts.
+2. For each, generate several synonyms or very closely related terms.
+3. Return a SINGLE line of text that:
+   - starts with the original query
+   - then adds synonyms and related terms, separated by commas.
+
+Do NOT explain anything. Just output the enriched query line.
+
+User query:
+"${userMessage}"
+    `.trim();
+
+    const resp = await fetch('https://api.openai.com/v1/chat/completions', {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${OPENAI_API_KEY}`,
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({
+        model: OPENAI_MODEL,
+        temperature: 0.1,
+        messages: [
+          { role: 'system', content: 'You expand search queries with synonyms and related terms. Output plain text only, no bullet points.' },
+          { role: 'user', content: prompt }
+        ]
+      })
+    });
+
+    if (!resp.ok) {
+      const txt = await resp.text().catch(() => '');
+      console.error('[expandQueryWithSynonyms] OpenAI error:', resp.status, txt);
+      return userMessage; // fallback
+    }
+
+    const json = await resp.json();
+    const enriched = json.choices?.[0]?.message?.content?.trim();
+    if (!enriched) return userMessage;
+
+    console.log('🔍 Query expansion:', { original: userMessage, expanded: enriched });
+    return enriched;
+  } catch (e) {
+    console.error('[expandQueryWithSynonyms] error:', e);
+    return userMessage; // fallback
+  }
+}
+
+// ──────────────────────────────────────────────────────────
 // Router (mounted both at "/" and "/api")
 // ──────────────────────────────────────────────────────────
 const api = express.Router();
@@ -264,9 +318,8 @@ api.get('/documents/list-raw', async (_req, res) => {
   } catch (e) { res.status(500).json({ ok: false, error: e.message }); }
 });
 
-
 // ──────────────────────────────────────────────────────────
-// Chat endpoint (SSE stream) — improved RAG wiring
+// Chat endpoint (SSE stream) — improved RAG wiring + synonyms
 // ──────────────────────────────────────────────────────────
 api.post('/chat', async (req, res) => {
   try {
@@ -275,6 +328,9 @@ api.post('/chat', async (req, res) => {
       return res.status(400).json({ ok: false, error: 'Empty message' });
     }
 
+    // Expand query with synonyms / related terms for better recall
+    const expandedQuery = await expandQueryWithSynonyms(userMessage);
+
     res.setHeader('Content-Type', 'text/event-stream');
     res.setHeader('Cache-Control', 'no-cache');
     res.setHeader('Connection', 'keep-alive');
@@ -282,10 +338,10 @@ api.post('/chat', async (req, res) => {
     // Small helper to call the Edge Function with an optional uploaded_by filter
     async function callRag(uploadedByLabel) {
       const body = {
-        query         : userMessage,
-        match_count   : RAG_DEFAULTS.match_count,
+        query          : expandedQuery,
+        match_count    : RAG_DEFAULTS.match_count,
         match_threshold: RAG_DEFAULTS.match_threshold,
-        search_mode   : RAG_DEFAULTS.search_mode
+        search_mode    : RAG_DEFAULTS.search_mode
       };
       if (uploadedByLabel) body.uploaded_by = uploadedByLabel;
 
@@ -298,7 +354,6 @@ api.post('/chat', async (req, res) => {
         },
         body   : JSON.stringify(body)
       });
-      
 
       if (!resp.ok) {
         const txt = await resp.text().catch(() => '');
@@ -317,66 +372,45 @@ api.post('/chat', async (req, res) => {
       return { matches: json?.matches || [], error: null };
     }
 
-
-
     // 1️⃣ Two pulls: Public Matters (🔴) & Edelman (🔵)
     const [pm, ed] = await Promise.all([
       callRag('Public Matters'),
       callRag('Edelman')
     ]);
 
-const allMatches = [
-  ...(pm.matches || []).map(m => ({ ...m, uploaded_by: m.uploaded_by || 'Public Matters' })),
-  ...(ed.matches || []).map(m => ({ ...m, uploaded_by: m.uploaded_by || 'Edelman' }))
-];
+    const allMatches = [
+      ...(pm.matches || []).map(m => ({ ...m, uploaded_by: m.uploaded_by || 'Public Matters' })),
+      ...(ed.matches || []).map(m => ({ ...m, uploaded_by: m.uploaded_by || 'Edelman' }))
+    ];
 
-// Full debug logging of ALL RAG matches with full snippet text
-console.log('────────────────────────────────────────────');
-console.log('RAG DEBUG: total matches:', allMatches.length);
-console.log('PM matches:', (pm.matches || []).length, ' | ED matches:', (ed.matches || []).length);
-console.log('────────────────────────────────────────────');
+    // Full debug logging of ALL RAG matches with full snippet text
+    console.log('────────────────────────────────────────────');
+    console.log('RAG DEBUG: total matches:', allMatches.length);
+    console.log('PM matches:', (pm.matches || []).length, ' | ED matches:', (ed.matches || []).length);
+    console.log('────────────────────────────────────────────');
 
-allMatches.forEach((m, i) => {
-  const baseTitle =
-    m.doc_name ||
-    m.naam ||
-    m.bron ||
-    `Bron #${i + 1}`;
+    allMatches.forEach((m, i) => {
+      const baseTitle =
+        m.doc_name ||
+        m.naam ||
+        m.bron ||
+        `Bron #${i + 1}`;
 
-  // Extract the text used for snippets EXACTLY as in your snippet builder
-  const snippetText = (
-    m.invloed_text ||
-    m.summary ||
-    m.excerpt ||
-    (typeof m.content === 'string'
-      ? m.content
-      : JSON.stringify(m.content || ''))
-  ).toString().trim();
+      const snippetText = (
+        m.invloed_text ||
+        m.summary ||
+        m.excerpt ||
+        (typeof m.content === 'string'
+          ? m.content
+          : JSON.stringify(m.content || ''))
+      ).toString().trim();
 
-  console.log(`[#${i + 1}] uploaded_by=${m.uploaded_by}`);
-  console.log(`Title: ${baseTitle}`);
-  console.log('Full snippet:');
-  console.log(snippetText || '(empty)');
-  console.log('────────────────────────────────────────────');
-});
-
-// 👇 Extra debug: show first few matches with titles + snippet preview
-for (const [i, m] of allMatches.slice(0, 5).entries()) {
-  const baseTitle = m.doc_name || m.naam || m.bron || `Bron #${i + 1}`;
-  const snippetText = (
-    m.invloed_text ||
-    m.summary ||
-    m.excerpt ||
-    (typeof m.content === 'string' ? m.content : JSON.stringify(m.content || ''))
-  ).toString().trim();
-
-  console.log(
-    `[#${i + 1}] uploaded_by=${m.uploaded_by} title="${baseTitle}"`,
-    'snippetPreview=',
-    snippetText.slice(0, 200).replace(/\s+/g, ' ')
-  );
-}
-
+      console.log(`[#${i + 1}] uploaded_by=${m.uploaded_by}`);
+      console.log(`Title: ${baseTitle}`);
+      console.log('Full snippet:');
+      console.log(snippetText || '(empty)');
+      console.log('────────────────────────────────────────────');
+    });
 
     // If the function is down / misconfigured, surface that visibly
     if ((pm.error && !pm.matches.length) && (ed.error && !ed.matches.length)) {
@@ -431,6 +465,9 @@ for (const [i, m] of allMatches.slice(0, 5).entries()) {
 You have access to a vector database with documents from:
 - 🔴 Public Matters (policy, parties, issue papers)
 - 🔵 Edelman (Edelman Trust Barometer reports)
+
+The retrieval query was expanded with synonyms/related terms:
+"${expandedQuery}"
 
 RAG STATS:
 - Total matches: ${totalHits}
@@ -568,7 +605,6 @@ api.patch('/admin/settings', async (req, res) => {
     res.status(500).json({ ok: false, error: e.message || 'Server error' });
   }
 });
-
 
 api.post('/admin/reload-system-prompt', async (_req, res) => {
   try { await fetchSystemPromptFromDB(); res.json({ ok: true }); }
@@ -740,7 +776,6 @@ function handleSpreadsheetUpload(req, res) {
     res.status(500).json({ ok: false, error: e.message || String(e) });
   }
 }
-
 
 // Original upload endpoint
 api.post('/admin/data/upload', handleSpreadsheetUpload);
