@@ -142,17 +142,7 @@ async function createEmbeddingsBatch({ model, inputs, apiKey }) {
 async function expandQueryWithSynonyms(userMessage) {
   try {
     const prompt = `
-You will be given a user query.
-
-1. Extract the 3–8 most important keywords and concepts.
-2. For each, generate several synonyms or very closely related terms.
-3. Return a SINGLE line of text that:
-   - starts with the original query
-   - then adds synonyms and related terms, separated by commas.
-
-Do NOT explain anything. Just output the enriched query line.
-
-User query:
+-
 "${userMessage}"
     `.trim();
 
