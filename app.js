@@ -18,7 +18,7 @@ app.use(express.static('public'));
 // Environment
 // ──────────────────────────────────────────────────────────
 const OPENAI_API_KEY = process.env.OPENAI_API_KEY;
-const OPENAI_MODEL = process.env.OPENAI_MODEL || 'gpt-4o';
+const OPENAI_MODEL = process.env.OPENAI_MODEL || 'gpt-4o-mini';
 const EMBED_MODEL = process.env.EMBED_MODEL || 'text-embedding-3-small';
 const DRY_RUN_EMBEDDINGS = String(process.env.DRY_RUN_EMBEDDINGS || '') === '1';
 
@@ -142,7 +142,17 @@ async function createEmbeddingsBatch({ model, inputs, apiKey }) {
 async function expandQueryWithSynonyms(userMessage) {
   try {
     const prompt = `
--
+You will be given a user query.
+
+1. Extract the 3–8 most important keywords and concepts.
+2. For each, generate several synonyms or very closely related terms.
+3. Return a SINGLE line of text that:
+   - starts with the original query
+   - then adds synonyms and related terms, separated by commas.
+
+Do NOT explain anything. Just output the enriched query line.
+
+User query:
 "${userMessage}"
     `.trim();
 
